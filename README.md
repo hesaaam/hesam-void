@@ -62,7 +62,7 @@ Download the latest APK from [Releases](../../releases).
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/YOUR_USERNAME/hesam-void.git
+   git clone https://github.com/hesaaam/hesam-void.git
    cd hesam-void
    ```
 
@@ -213,5 +213,5 @@ This software is for educational purposes only. Users are responsible for comply
 ---
 
 <p align="center">
-  Made with ❤️ by <a href="https://github.com/YOUR_USERNAME">Hesam</a>
+  Made with ❤️ by <a href="https://github.com/hesaaam">Hesam</a>
 </p>
