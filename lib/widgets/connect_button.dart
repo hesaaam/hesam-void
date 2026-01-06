@@ -9,12 +9,14 @@ class ConnectButton extends StatefulWidget {
   final VpnStatus status;
   final VoidCallback onTap;
   final String? serverName;
+  final Color? primaryColor;
   
   const ConnectButton({
     super.key,
     required this.status,
     required this.onTap,
     this.serverName,
+    this.primaryColor,
   });
   
   @override
@@ -26,6 +28,8 @@ class _ConnectButtonState extends State<ConnectButton>
   late AnimationController _pulseController;
   late AnimationController _rotationController;
   late Animation<double> _pulseAnimation;
+
+  Color get _primaryColor => widget.primaryColor ?? AppTheme.primaryGreen;
 
   @override
   void initState() {
@@ -102,8 +106,8 @@ class _ConnectButtonState extends State<ConnectButton>
         if (widget.serverName != null)
           Text(
             widget.serverName!,
-            style: const TextStyle(
-              color: AppTheme.textMuted,
+            style: TextStyle(
+              color: _primaryColor.withValues(alpha: 0.5),
               fontSize: 12,
               fontFamily: 'JetBrainsMono',
             ),
@@ -144,9 +148,9 @@ class _ConnectButtonState extends State<ConnectButton>
                             ),
                             gradient: SweepGradient(
                               colors: [
-                                AppTheme.primaryGreen.withValues(alpha: 0),
-                                AppTheme.primaryGreen,
-                                AppTheme.primaryGreen.withValues(alpha: 0),
+                                _primaryColor.withValues(alpha: 0),
+                                _primaryColor,
+                                _primaryColor.withValues(alpha: 0),
                               ],
                             ),
                           ),
@@ -193,7 +197,7 @@ class _ConnectButtonState extends State<ConnectButton>
         Text(
           _getActionText(),
           style: TextStyle(
-            color: AppTheme.textSecondary,
+            color: _primaryColor.withValues(alpha: 0.6),
             fontSize: 12,
             fontFamily: 'JetBrainsMono',
           ),
@@ -267,7 +271,7 @@ class _ConnectButtonState extends State<ConnectButton>
   Color _getStatusColor() {
     switch (widget.status) {
       case VpnStatus.connected:
-        return AppTheme.primaryGreen;
+        return _primaryColor;
       case VpnStatus.connecting:
         return AppTheme.accentCyan;
       case VpnStatus.disconnecting:
@@ -275,7 +279,7 @@ class _ConnectButtonState extends State<ConnectButton>
       case VpnStatus.error:
         return AppTheme.accentRed;
       default:
-        return AppTheme.textMuted;
+        return _primaryColor.withValues(alpha: 0.5);
     }
   }
 
@@ -311,18 +315,25 @@ class _ConnectButtonState extends State<ConnectButton>
 /// Connection Statistics Widget
 class ConnectionStats extends StatelessWidget {
   final VpnStats stats;
+  final Color? primaryColor;
   
-  const ConnectionStats({super.key, required this.stats});
+  const ConnectionStats({
+    super.key, 
+    required this.stats,
+    this.primaryColor,
+  });
   
   @override
   Widget build(BuildContext context) {
+    final color = primaryColor ?? AppTheme.primaryGreen;
+    
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: AppTheme.backgroundCard,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: AppTheme.primaryGreen.withValues(alpha: 0.2),
+          color: color.withValues(alpha: 0.2),
         ),
       ),
       child: Column(
@@ -331,16 +342,16 @@ class ConnectionStats extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(
+              Icon(
                 Icons.timer_outlined,
-                color: AppTheme.primaryGreen,
+                color: color,
                 size: 20,
               ),
               const SizedBox(width: 8),
               Text(
                 stats.duration,
-                style: const TextStyle(
-                  color: AppTheme.primaryGreen,
+                style: TextStyle(
+                  color: color,
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
                   fontFamily: 'JetBrainsMono',
@@ -403,7 +414,7 @@ class ConnectionStats extends StatelessWidget {
             const SizedBox(width: 4),
             Text(
               label,
-              style: TextStyle(
+              style: const TextStyle(
                 color: AppTheme.textMuted,
                 fontSize: 11,
                 fontFamily: 'JetBrainsMono',

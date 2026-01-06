@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/Version-3.0.0-green" alt="Version">
   <img src="https://img.shields.io/badge/Flutter-3.35.4-02569B?logo=flutter" alt="Flutter">
   <img src="https://img.shields.io/badge/Dart-3.9.2-0175C2?logo=dart" alt="Dart">
   <img src="https://img.shields.io/badge/Xray_Core-25.3.6-green" alt="Xray Core">
@@ -18,25 +19,50 @@
 
 ---
 
+## What's New in v3.0.0
+
+### Advanced Features
+- **Smart Config Optimizer**: Auto-optimize MTU, buffer size, DNS for better speed
+- **Fragment/Noise Injection**: DPI bypass techniques for strict networks (Iran)
+- **Auto-Reconnect & Failover**: Automatic reconnection with server switching
+- **Multi-Server Load Balancing**: Distribute traffic across multiple servers
+
+### Enhanced UI/UX
+- **Real-time Speed Graph**: Live animated upload/download graph with 60s history
+- **Connection Map**: Visual server connection with animated path
+- **Theme System**: 8 beautiful themes (Terminal Green, Cyberpunk Purple, Ocean Blue, Blood Red, Neon Orange, Electric Teal, Midnight Gold, Clean White)
+- **Haptic Feedback**: Satisfying vibration on connect/disconnect and UI interactions
+- **Split Tunneling**: Choose which apps use VPN (bypass games, local apps)
+
+---
+
 ## Features
 
+### Core VPN
 - **Multi-Protocol Support**: VLESS, VMess, Trojan, Shadowsocks
 - **Reality Protocol**: Full support for VLESS + Reality (best for Iran)
-- **Beautiful UI**: Terminal Green theme with smooth animations
+- **Bypass Subnets**: Local network traffic bypass (10.x, 192.168.x, 172.x)
+- **Secure Storage**: Encrypted local storage with Hive
+
+### Config Management
 - **QR Code**: Import/Export configs via QR code
 - **Clipboard Support**: Quick import from clipboard
 - **Ping Test**: Measure server latency
-- **Live Stats**: Real-time upload/download speed and duration
-- **Secure Storage**: Encrypted local storage with Hive
 - **Sorting**: Sort servers by ping, name, date, or protocol
+
+### UI/UX
+- **Beautiful UI**: Multiple theme options with smooth animations
+- **Live Stats**: Real-time upload/download speed and duration
+- **Matrix Background**: Animated cyberpunk-style background
+- **Connection Animation**: Visual feedback during connection
 
 ---
 
 ## Screenshots
 
-| Connect Screen | Servers Screen | QR Scanner |
-|:--------------:|:--------------:|:----------:|
-| ![Connect](screenshots/connect.png) | ![Servers](screenshots/servers.png) | ![QR](screenshots/qr.png) |
+| Connect Screen | Servers Screen | Settings |
+|:--------------:|:--------------:|:--------:|
+| ![Connect](screenshots/connect.png) | ![Servers](screenshots/servers.png) | ![Settings](screenshots/settings.png) |
 
 ---
 
@@ -44,19 +70,23 @@
 
 | Protocol | Status | Description |
 |----------|--------|-------------|
-| VLESS + Reality | ✅ Full | Best for bypassing censorship |
-| VLESS + TLS | ✅ Full | Secure with TLS encryption |
-| VMess + WS | ✅ Full | WebSocket transport |
-| VMess + TCP | ✅ Full | Direct TCP connection |
-| Trojan | ✅ Full | HTTPS-like traffic |
-| Shadowsocks | ✅ Full | Lightweight and fast |
+| VLESS + Reality | Full | Best for bypassing censorship |
+| VLESS + TLS | Full | Secure with TLS encryption |
+| VMess + WS | Full | WebSocket transport |
+| VMess + TCP | Full | Direct TCP connection |
+| Trojan | Full | HTTPS-like traffic |
+| Shadowsocks | Full | Lightweight and fast |
 
 ---
 
 ## Installation
 
 ### Download APK
-Download the latest APK from [Releases](../../releases).
+Download the latest APK from [Releases](../../releases/latest).
+
+### Requirements
+- Android 5.0 (API 21) or higher
+- ARM64, ARM, or x86_64 architecture
 
 ### Build from Source
 
@@ -85,9 +115,9 @@ Download the latest APK from [Releases](../../releases).
 
 ## Usage
 
-1. **Add Server**: Go to SERVERS tab → Tap + → Import from clipboard or scan QR
+1. **Add Server**: Go to SERVERS tab - Tap + - Import from clipboard or scan QR
 2. **Select Server**: Tap on a server card to select it
-3. **Connect**: Go to CONNECT tab → Tap the power button
+3. **Connect**: Go to CONNECT tab - Tap the power button
 4. **Grant Permission**: Allow VPN permission when prompted
 5. **Enjoy**: Your traffic is now encrypted!
 
@@ -124,59 +154,57 @@ lib/
 │   └── vpn_config.dart       # VPN config data model
 ├── services/
 │   ├── vpn_service.dart      # VPN connection service
-│   ├── config_parser_service.dart  # Config URL parser
+│   ├── config_optimizer_service.dart  # Config optimization
+│   ├── fragment_service.dart # DPI bypass techniques
+│   ├── auto_reconnect_service.dart    # Auto reconnect
+│   ├── load_balancer_service.dart     # Load balancing
+│   ├── split_tunneling_service.dart   # Split tunneling
+│   ├── haptic_service.dart   # Haptic feedback
 │   └── ping_service.dart     # Server latency test
 ├── providers/
 │   └── config_provider.dart  # Config state management
 ├── screens/
-│   ├── home_screen.dart      # Main screen (Connect + Servers)
-│   ├── splash_screen.dart    # Splash screen
+│   ├── home_screen.dart      # Main screen
+│   ├── settings_screen.dart  # Settings with themes
+│   ├── splash_screen.dart    # Animated splash
 │   └── qr_scanner_screen.dart # QR scanner
 ├── widgets/
 │   ├── connect_button.dart   # Animated connect button
 │   ├── config_card.dart      # Server config card
+│   ├── speed_graph.dart      # Real-time speed graph
+│   ├── connection_map.dart   # Connection visualization
 │   ├── animated_background.dart # Matrix-style background
 │   └── qr_dialog.dart        # QR display dialog
 └── utils/
-    └── app_theme.dart        # Terminal Green theme
+    ├── app_theme.dart        # Base theme
+    └── theme_manager.dart    # Multi-theme system
 ```
 
 ---
 
-## Building for Production
+## Themes
 
-### Android APK
-```bash
-flutter build apk --release
-```
-
-### Android App Bundle (for Play Store)
-```bash
-flutter build appbundle --release
-```
-
-### Split APKs by Architecture
-The project is configured to build split APKs for different architectures:
-- `arm64-v8a` (most modern devices)
-- `armeabi-v7a` (older devices)
-- `x86_64` (emulators)
+| Theme | Description |
+|-------|-------------|
+| Terminal Green | Classic Matrix-style (default) |
+| Cyberpunk Purple | Neon purple aesthetic |
+| Ocean Blue | Calm blue tones |
+| Blood Red | Bold red theme |
+| Neon Orange | Vibrant orange |
+| Electric Teal | Fresh teal colors |
+| Midnight Gold | Luxurious gold accents |
+| Clean White | Light mode option |
 
 ---
 
-## Configuration
+## Anti-Filtering Features
 
-### Android Manifest Permissions
-```xml
-<uses-permission android:name="android.permission.INTERNET"/>
-<uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-<uses-permission android:name="android.permission.CAMERA"/>
-```
-
-### Bypass Subnets
-Local network traffic is automatically bypassed:
-- `10.0.0.0/8`
-- `192.168.0.0/16`
-- `172.16.0.0/12`
+### For Iran (and similar regions)
+- **Fragment Injection**: Split TLS hello packets
+- **TLS Padding**: Add random padding to bypass DPI
+- **SNI Randomization**: Randomize server name indication
+- **TLS Fingerprinting**: Mimic browser fingerprints (Chrome, Firefox, Safari)
+- **Reality Protocol**: Undetectable VPN traffic
 
 ---
 
@@ -213,5 +241,5 @@ This software is for educational purposes only. Users are responsible for comply
 ---
 
 <p align="center">
-  Made with ❤️ by <a href="https://github.com/hesaaam">Hesam</a>
+  Made with love by <a href="https://github.com/hesaaam">Hesam</a>
 </p>

@@ -15,6 +15,9 @@ class ConfigCard extends StatefulWidget {
   final bool isSelected;
   final bool isTesting;
   final int index;
+  final Color? primaryColor;
+  final Color? surfaceColor;
+  final Color? textColor;
   
   const ConfigCard({
     super.key,
@@ -27,6 +30,9 @@ class ConfigCard extends StatefulWidget {
     this.isSelected = false,
     this.isTesting = false,
     this.index = 0,
+    this.primaryColor,
+    this.surfaceColor,
+    this.textColor,
   });
   
   @override
@@ -36,6 +42,10 @@ class ConfigCard extends StatefulWidget {
 class _ConfigCardState extends State<ConfigCard>
     with SingleTickerProviderStateMixin {
   bool _isExpanded = false;
+
+  Color get _primaryColor => widget.primaryColor ?? AppTheme.primaryGreen;
+  Color get _surfaceColor => widget.surfaceColor ?? AppTheme.backgroundCard;
+  Color get _textColor => widget.textColor ?? AppTheme.textPrimary;
 
   @override
   Widget build(BuildContext context) {
@@ -63,11 +73,11 @@ class _ConfigCardState extends State<ConfigCard>
           curve: Curves.easeOutCubic,
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
-            color: AppTheme.backgroundCard,
+            color: _surfaceColor,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: widget.isSelected
-                  ? AppTheme.primaryGreen
+                  ? _primaryColor
                   : AppTheme.getProtocolColor(widget.config.protocolString)
                       .withValues(alpha: 0.3),
               width: widget.isSelected ? 2 : 1,
@@ -75,7 +85,7 @@ class _ConfigCardState extends State<ConfigCard>
             boxShadow: widget.isSelected
                 ? [
                     BoxShadow(
-                      color: AppTheme.primaryGreen.withValues(alpha: 0.3),
+                      color: _primaryColor.withValues(alpha: 0.3),
                       blurRadius: 20,
                       spreadRadius: 0,
                     ),
@@ -100,8 +110,8 @@ class _ConfigCardState extends State<ConfigCard>
                         children: [
                           Text(
                             widget.config.name,
-                            style: const TextStyle(
-                              color: AppTheme.textPrimary,
+                            style: TextStyle(
+                              color: _textColor,
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
                               fontFamily: 'JetBrainsMono',
@@ -122,8 +132,8 @@ class _ConfigCardState extends State<ConfigCard>
                           const SizedBox(height: 4),
                           Text(
                             '${widget.config.address}:${widget.config.port}',
-                            style: const TextStyle(
-                              color: AppTheme.textMuted,
+                            style: TextStyle(
+                              color: _textColor.withValues(alpha: 0.5),
                               fontSize: 11,
                               fontFamily: 'JetBrainsMono',
                             ),
@@ -187,16 +197,16 @@ class _ConfigCardState extends State<ConfigCard>
         width: 60,
         height: 36,
         decoration: BoxDecoration(
-          color: AppTheme.backgroundElevated,
+          color: _primaryColor.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: const Center(
+        child: Center(
           child: SizedBox(
             width: 20,
             height: 20,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation(AppTheme.primaryGreen),
+              valueColor: AlwaysStoppedAnimation(_primaryColor),
             ),
           ),
         ),
@@ -272,7 +282,7 @@ class _ConfigCardState extends State<ConfigCard>
           _buildActionButton(
             icon: Icons.speed_rounded,
             label: 'Ping',
-            color: AppTheme.primaryGreen,
+            color: _primaryColor,
             onTap: widget.onTestPing,
           ),
           _buildActionButton(
@@ -329,11 +339,21 @@ class _ConfigCardState extends State<ConfigCard>
 /// Empty state widget
 class EmptyConfigsWidget extends StatelessWidget {
   final VoidCallback? onAddConfig;
+  final Color? primaryColor;
+  final Color? textColor;
   
-  const EmptyConfigsWidget({super.key, this.onAddConfig});
+  const EmptyConfigsWidget({
+    super.key, 
+    this.onAddConfig,
+    this.primaryColor,
+    this.textColor,
+  });
   
   @override
   Widget build(BuildContext context) {
+    final color = primaryColor ?? AppTheme.primaryGreen;
+    final text = textColor ?? AppTheme.textPrimary;
+    
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -341,15 +361,15 @@ class EmptyConfigsWidget extends StatelessWidget {
           Icon(
             Icons.shield_outlined,
             size: 80,
-            color: AppTheme.primaryGreen.withValues(alpha: 0.3),
+            color: color.withValues(alpha: 0.3),
           )
               .animate(onPlay: (c) => c.repeat())
-              .shimmer(duration: 2000.ms, color: AppTheme.primaryGreen.withValues(alpha: 0.5)),
+              .shimmer(duration: 2000.ms, color: color.withValues(alpha: 0.5)),
           const SizedBox(height: 24),
-          const Text(
+          Text(
             'No Configurations',
             style: TextStyle(
-              color: AppTheme.textPrimary,
+              color: text,
               fontSize: 20,
               fontWeight: FontWeight.bold,
               fontFamily: 'JetBrainsMono',
@@ -359,7 +379,7 @@ class EmptyConfigsWidget extends StatelessWidget {
           Text(
             'Add your first VPN config to get started',
             style: TextStyle(
-              color: AppTheme.textMuted,
+              color: text.withValues(alpha: 0.5),
               fontSize: 14,
               fontFamily: 'JetBrainsMono',
             ),
@@ -370,7 +390,7 @@ class EmptyConfigsWidget extends StatelessWidget {
             icon: const Icon(Icons.add_rounded),
             label: const Text('ADD CONFIG'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primaryGreen,
+              backgroundColor: color,
               foregroundColor: AppTheme.backgroundDark,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
             ),

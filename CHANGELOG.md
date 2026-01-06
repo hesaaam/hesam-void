@@ -2,6 +2,52 @@
 
 All notable changes to Hesam Void will be documented in this file.
 
+## [3.0.0] - 2025-01-06
+
+### Added - Major Feature Update
+
+#### Smart Optimization
+- **Config Optimizer**: Auto-optimize MTU, buffer size, DNS for better speed
+- **Fragment Injection**: DPI bypass with TCP packet splitting
+- **TLS Padding**: Random padding to bypass deep packet inspection
+- **SNI Randomization**: Randomize server name indication
+- **TLS Fingerprinting**: Mimic browser fingerprints (Chrome, Firefox, Safari)
+
+#### Connection Management
+- **Auto-Reconnect**: Automatic reconnection when connection drops
+- **Failover**: Switch to next server after max retries
+- **Health Check**: Periodic connection health monitoring
+- **Load Balancing**: Distribute traffic across multiple servers
+
+#### Enhanced UI/UX
+- **Real-time Speed Graph**: Animated upload/download graph with 60s history
+- **Connection Map**: Visual server connection with animated path
+- **8 Beautiful Themes**: Terminal Green, Cyberpunk Purple, Ocean Blue, Blood Red, Neon Orange, Electric Teal, Midnight Gold, Clean White
+- **Custom Theme Creator**: Create your own theme with color picker
+- **Haptic Feedback**: Satisfying vibration on all interactions
+
+#### Split Tunneling
+- **App Bypass**: Choose apps to bypass VPN (games, local apps)
+- **VPN Only Mode**: Choose apps that use VPN exclusively
+- **Popular Apps List**: Quick access to common apps
+
+#### Settings Screen
+- **Organized Settings**: 4-tab layout (Theme, Optimize, Split, General)
+- **Visual DNS Selector**: Choose DNS provider with one tap
+- **Slider Controls**: Easy adjustment for MTU, retries, delays
+
+### Changed
+- Updated version to 3.0.0
+- Improved home screen with advanced stats toggle
+- Enhanced connect button with theme support
+- Better config card with theme colors
+
+### Fixed
+- Theme consistency across all screens
+- Animation performance improvements
+
+---
+
 ## [2.2.0] - 2025-01-04
 
 ### Added

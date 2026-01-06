@@ -5,8 +5,13 @@ import '../utils/app_theme.dart';
 /// Animated Matrix-style background with falling characters
 class AnimatedBackground extends StatefulWidget {
   final Widget child;
+  final Color? primaryColor;
   
-  const AnimatedBackground({super.key, required this.child});
+  const AnimatedBackground({
+    super.key, 
+    required this.child,
+    this.primaryColor,
+  });
   
   @override
   State<AnimatedBackground> createState() => _AnimatedBackgroundState();
@@ -17,6 +22,8 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
   late AnimationController _controller;
   final List<MatrixColumn> _columns = [];
   final Random _random = Random();
+
+  Color get _primaryColor => widget.primaryColor ?? AppTheme.primaryGreen;
 
   @override
   void initState() {
@@ -67,6 +74,7 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
                   painter: MatrixPainter(
                     columns: _columns,
                     maxHeight: constraints.maxHeight,
+                    primaryColor: _primaryColor,
                   ),
                 );
               },
@@ -113,10 +121,15 @@ class MatrixColumn {
 class MatrixPainter extends CustomPainter {
   final List<MatrixColumn> columns;
   final double maxHeight;
+  final Color primaryColor;
   static const String chars = '01アイウエオカキクケコサシスセソタチツテト';
   final Random _random = Random();
   
-  MatrixPainter({required this.columns, required this.maxHeight});
+  MatrixPainter({
+    required this.columns, 
+    required this.maxHeight,
+    required this.primaryColor,
+  });
   
   @override
   void paint(Canvas canvas, Size size) {
@@ -134,7 +147,7 @@ class MatrixPainter extends CustomPainter {
         
         final opacity = (1 - i / column.length) * 0.15;
         final paint = Paint()
-          ..color = AppTheme.primaryGreen.withValues(alpha: opacity);
+          ..color = primaryColor.withValues(alpha: opacity);
         
         final textPainter = TextPainter(
           text: TextSpan(
