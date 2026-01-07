@@ -1,20 +1,82 @@
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
-/// Fragment & Noise Injection Service
+/// Fragment & Noise Injection Service with Persistent Settings
 /// Advanced techniques to bypass DPI (Deep Packet Inspection) in Iran
-class FragmentService {
+class FragmentService extends ChangeNotifier {
   static final FragmentService _instance = FragmentService._internal();
   factory FragmentService() => _instance;
   FragmentService._internal();
+
+  static const String _boxName = 'fragment_settings';
+  Box? _settingsBox;
+  bool _isInitialized = false;
 
   // Settings model
   FragmentServiceSettings _settings = FragmentServiceSettings();
   
   // Getters and setters for settings
   FragmentServiceSettings get settings => _settings;
-  set settings(FragmentServiceSettings value) => _settings = value;
+  bool get isInitialized => _isInitialized;
+  
+  set settings(FragmentServiceSettings value) {
+    _settings = value;
+    _saveSettings();
+    notifyListeners();
+  }
+
+  /// Initialize Hive storage
+  Future<void> initialize() async {
+    if (_isInitialized) return;
+    
+    try {
+      _settingsBox = await Hive.openBox(_boxName);
+      _loadSettings();
+      _isInitialized = true;
+      
+      if (kDebugMode) {
+        debugPrint('[FragmentService] Initialized with settings: ${_settings.toJson()}');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[FragmentService] Failed to initialize: $e');
+      }
+    }
+  }
+
+  /// Load settings from Hive
+  void _loadSettings() {
+    if (_settingsBox == null) return;
+    
+    try {
+      final data = _settingsBox!.get('settings');
+      if (data != null) {
+        _settings = FragmentServiceSettings.fromJson(Map<String, dynamic>.from(data));
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[FragmentService] Error loading settings: $e');
+      }
+    }
+  }
+
+  /// Save settings to Hive
+  Future<void> _saveSettings() async {
+    if (_settingsBox == null) return;
+    
+    try {
+      await _settingsBox!.put('settings', _settings.toJson());
+      if (kDebugMode) {
+        debugPrint('[FragmentService] Settings saved');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[FragmentService] Error saving settings: $e');
+      }
+    }
+  }
 
   /// Fragment settings for Iran
   static const Map<String, dynamic> iranFragmentSettings = {
@@ -61,7 +123,6 @@ class FragmentService {
                 stream['sockopt']['tcpNoDelay'] = true;
                 break;
               case FragmentMode.auto:
-              default:
                 stream['sockopt']['tcpKeepAliveInterval'] = 30;
                 stream['sockopt']['tcpFastOpen'] = true;
             }
@@ -268,18 +329,20 @@ class FragmentSettings {
   });
 }
 
-/// Fragment Service Settings Model
+/// Fragment Service Settings Model with JSON serialization
 class FragmentServiceSettings {
   final bool fragmentEnabled;
   final bool tlsPaddingEnabled;
   final bool sniRandomizationEnabled;
   final FragmentMode mode;
+  final String tlsFingerprint;
 
   FragmentServiceSettings({
     this.fragmentEnabled = false,
     this.tlsPaddingEnabled = false,
     this.sniRandomizationEnabled = false,
     this.mode = FragmentMode.auto,
+    this.tlsFingerprint = 'chrome',
   });
 
   FragmentServiceSettings copyWith({
@@ -287,12 +350,32 @@ class FragmentServiceSettings {
     bool? tlsPaddingEnabled,
     bool? sniRandomizationEnabled,
     FragmentMode? mode,
+    String? tlsFingerprint,
   }) {
     return FragmentServiceSettings(
       fragmentEnabled: fragmentEnabled ?? this.fragmentEnabled,
       tlsPaddingEnabled: tlsPaddingEnabled ?? this.tlsPaddingEnabled,
       sniRandomizationEnabled: sniRandomizationEnabled ?? this.sniRandomizationEnabled,
       mode: mode ?? this.mode,
+      tlsFingerprint: tlsFingerprint ?? this.tlsFingerprint,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'fragmentEnabled': fragmentEnabled,
+    'tlsPaddingEnabled': tlsPaddingEnabled,
+    'sniRandomizationEnabled': sniRandomizationEnabled,
+    'mode': mode.index,
+    'tlsFingerprint': tlsFingerprint,
+  };
+
+  factory FragmentServiceSettings.fromJson(Map<String, dynamic> json) {
+    return FragmentServiceSettings(
+      fragmentEnabled: json['fragmentEnabled'] ?? false,
+      tlsPaddingEnabled: json['tlsPaddingEnabled'] ?? false,
+      sniRandomizationEnabled: json['sniRandomizationEnabled'] ?? false,
+      mode: FragmentMode.values[json['mode'] ?? 0],
+      tlsFingerprint: json['tlsFingerprint'] ?? 'chrome',
     );
   }
 }

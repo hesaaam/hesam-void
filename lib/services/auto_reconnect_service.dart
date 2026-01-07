@@ -1,25 +1,30 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import '../models/vpn_config.dart';
 import 'vpn_service.dart';
 
-/// Auto-Reconnect & Failover Service
+/// Auto-Reconnect & Failover Service with Persistent Settings
 /// Automatically reconnects when connection drops and switches to next server
 class AutoReconnectService extends ChangeNotifier {
   static final AutoReconnectService _instance = AutoReconnectService._internal();
   factory AutoReconnectService() => _instance;
   AutoReconnectService._internal();
 
+  static const String _boxName = 'auto_reconnect_settings';
+  Box? _settingsBox;
+  bool _isInitialized = false;
+
   final VpnService _vpnService = VpnService();
   
-  // Settings
+  // Settings (persisted)
   bool _enabled = true;
   int _maxRetries = 3;
   int _retryDelaySeconds = 5;
   int _healthCheckIntervalSeconds = 30;
   bool _autoFailover = true;
   
-  // State
+  // State (not persisted)
   int _currentRetryCount = 0;
   Timer? _healthCheckTimer;
   Timer? _reconnectTimer;
@@ -28,11 +33,12 @@ class AutoReconnectService extends ChangeNotifier {
   bool _isReconnecting = false;
   DateTime? _lastDisconnectTime;
   
-  // Stats
+  // Stats (not persisted)
   int _totalReconnects = 0;
   int _totalFailovers = 0;
   
   // Getters
+  bool get isInitialized => _isInitialized;
   bool get isEnabled => _enabled;
   bool get enabled => _enabled;
   bool get isReconnecting => _isReconnecting;
@@ -43,9 +49,71 @@ class AutoReconnectService extends ChangeNotifier {
       ? _serverQueue[_currentServerIndex].name
       : 'None';
 
+  /// Initialize Hive storage and load settings
+  Future<void> initializeStorage() async {
+    if (_isInitialized) return;
+    
+    try {
+      _settingsBox = await Hive.openBox(_boxName);
+      _loadSettings();
+      _isInitialized = true;
+      
+      if (kDebugMode) {
+        debugPrint('[AutoReconnect] Storage initialized');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[AutoReconnect] Failed to initialize storage: $e');
+      }
+    }
+  }
+
+  /// Load settings from Hive
+  void _loadSettings() {
+    if (_settingsBox == null) return;
+    
+    try {
+      _enabled = _settingsBox!.get('enabled', defaultValue: true);
+      _maxRetries = _settingsBox!.get('maxRetries', defaultValue: 3);
+      _retryDelaySeconds = _settingsBox!.get('retryDelaySeconds', defaultValue: 5);
+      _healthCheckIntervalSeconds = _settingsBox!.get('healthCheckIntervalSeconds', defaultValue: 30);
+      _autoFailover = _settingsBox!.get('autoFailover', defaultValue: true);
+      
+      if (kDebugMode) {
+        debugPrint('[AutoReconnect] Settings loaded: enabled=$_enabled, maxRetries=$_maxRetries, delay=$_retryDelaySeconds');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[AutoReconnect] Error loading settings: $e');
+      }
+    }
+  }
+
+  /// Save settings to Hive
+  Future<void> _saveSettings() async {
+    if (_settingsBox == null) return;
+    
+    try {
+      await _settingsBox!.put('enabled', _enabled);
+      await _settingsBox!.put('maxRetries', _maxRetries);
+      await _settingsBox!.put('retryDelaySeconds', _retryDelaySeconds);
+      await _settingsBox!.put('healthCheckIntervalSeconds', _healthCheckIntervalSeconds);
+      await _settingsBox!.put('autoFailover', _autoFailover);
+      
+      if (kDebugMode) {
+        debugPrint('[AutoReconnect] Settings saved');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[AutoReconnect] Error saving settings: $e');
+      }
+    }
+  }
+
   /// Enable/disable auto-reconnect
   void setEnabled(bool value) {
     _enabled = value;
+    _saveSettings();
     if (!value) {
       stopMonitoring();
     }
@@ -55,6 +123,7 @@ class AutoReconnectService extends ChangeNotifier {
   /// Set max retries before failover
   void setMaxRetries(int value) {
     _maxRetries = value;
+    _saveSettings();
     notifyListeners();
   }
 
@@ -67,18 +136,21 @@ class AutoReconnectService extends ChangeNotifier {
   /// Set retry delay in seconds
   void setRetryDelay(int seconds) {
     _retryDelaySeconds = seconds;
+    _saveSettings();
     notifyListeners();
   }
 
   /// Set retry delay duration
   void setReconnectDelay(Duration duration) {
     _retryDelaySeconds = duration.inSeconds;
+    _saveSettings();
     notifyListeners();
   }
 
   /// Set health check interval
   void setHealthCheckInterval(int seconds) {
     _healthCheckIntervalSeconds = seconds;
+    _saveSettings();
     _restartHealthCheck();
     notifyListeners();
   }
@@ -92,8 +164,10 @@ class AutoReconnectService extends ChangeNotifier {
 
   /// Initialize the service
   void initialize(VpnService vpnService, dynamic configProvider) {
-    // Start monitoring when initialized
-    startMonitoring();
+    // Initialize storage first, then start monitoring
+    initializeStorage().then((_) {
+      startMonitoring();
+    });
   }
 
   /// Start monitoring connection

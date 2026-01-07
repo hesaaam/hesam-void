@@ -468,10 +468,93 @@ class _SpeedGraphWidgetState extends State<SpeedGraphWidget> {
   
   @override
   Widget build(BuildContext context) {
-    return SpeedGraph(
-      stats: widget.vpnService.stats,
-      isConnected: widget.vpnService.isConnected,
-      height: 200,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SpeedGraph(
+          stats: widget.vpnService.stats,
+          isConnected: widget.vpnService.isConnected,
+          height: 180,
+        ),
+        const SizedBox(height: 12),
+        // Additional stats row
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: (widget.backgroundColor ?? AppTheme.backgroundCard).withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: (widget.primaryColor ?? AppTheme.primaryGreen).withValues(alpha: 0.2),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildMiniStat(
+                'Duration',
+                widget.vpnService.stats.duration,
+                Icons.timer_outlined,
+                widget.primaryColor ?? AppTheme.primaryGreen,
+              ),
+              Container(
+                width: 1,
+                height: 30,
+                color: AppTheme.backgroundElevated,
+              ),
+              _buildMiniStat(
+                'Total ↓',
+                widget.vpnService.stats.totalDownloadStr,
+                Icons.arrow_downward,
+                AppTheme.accentCyan,
+              ),
+              Container(
+                width: 1,
+                height: 30,
+                color: AppTheme.backgroundElevated,
+              ),
+              _buildMiniStat(
+                'Total ↑',
+                widget.vpnService.stats.totalUploadStr,
+                Icons.arrow_upward,
+                AppTheme.accentPurple,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMiniStat(String label, String value, IconData icon, Color color) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 12),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: const TextStyle(
+                color: AppTheme.textMuted,
+                fontSize: 10,
+                fontFamily: 'JetBrainsMono',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(
+            color: color,
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            fontFamily: 'JetBrainsMono',
+          ),
+        ),
+      ],
     );
   }
 }

@@ -1,12 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'providers/config_provider.dart';
 import 'screens/home_screen.dart';
 import 'utils/app_theme.dart';
+import 'services/config_optimizer_service.dart';
+import 'services/fragment_service.dart';
+import 'services/auto_reconnect_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize Hive for local storage
+  await Hive.initFlutter();
+  
+  // Initialize all services with persistent storage
+  await ConfigOptimizerService().initialize();
+  await FragmentService().initialize();
+  await AutoReconnectService().initializeStorage();
   
   // Set system UI overlay style for immersive dark theme
   SystemChrome.setSystemUIOverlayStyle(

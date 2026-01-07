@@ -2,6 +2,29 @@
 
 All notable changes to Hesam Void will be documented in this file.
 
+## [3.0.1] - 2025-01-07
+
+### Fixed 🐛
+- **Settings Persistence**: All OPTIMIZE settings now persist after app restart
+  - Auto Optimize Speed, DNS Provider, MTU Size
+  - Fragment Injection, TLS Padding, SNI Randomization
+  - Auto Reconnect, Reconnect Delay, Max Retries
+- **UI Scroll Issues**: Fixed last item cut off in Theme and Optimize tabs
+- **Tunnel Active Badge**: Moved badge to proper position (no longer overlaps server info)
+- **Detailed View**: Improved Speed Graph layout with additional stats row
+
+### Changed
+- Added TLS Fingerprint selector in OPTIMIZE tab
+- Better padding in all scrollable lists (bottom: 100px)
+- Version updated to 3.0.1
+
+### Technical
+- Services now use Hive boxes for persistent storage
+- ConfigOptimizerService, FragmentService, AutoReconnectService all support JSON serialization
+- Settings initialized in main.dart before app starts
+
+---
+
 ## [3.0.0] - 2025-01-06
 
 ### Added - Major Feature Update

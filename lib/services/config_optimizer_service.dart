@@ -1,20 +1,82 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
-/// Smart Config Optimizer Service
+/// Smart Config Optimizer Service with Persistent Settings
 /// Optimizes V2Ray configs for better speed and lower ping
-class ConfigOptimizerService {
+class ConfigOptimizerService extends ChangeNotifier {
   static final ConfigOptimizerService _instance = ConfigOptimizerService._internal();
   factory ConfigOptimizerService() => _instance;
   ConfigOptimizerService._internal();
+
+  static const String _boxName = 'optimizer_settings';
+  Box? _settingsBox;
+  bool _isInitialized = false;
 
   // Settings model
   OptimizerSettings _settings = OptimizerSettings();
   
   // Getters and setters for settings
   OptimizerSettings get settings => _settings;
-  set settings(OptimizerSettings value) => _settings = value;
+  bool get isInitialized => _isInitialized;
+  
+  set settings(OptimizerSettings value) {
+    _settings = value;
+    _saveSettings();
+    notifyListeners();
+  }
+
+  /// Initialize Hive storage
+  Future<void> initialize() async {
+    if (_isInitialized) return;
+    
+    try {
+      _settingsBox = await Hive.openBox(_boxName);
+      _loadSettings();
+      _isInitialized = true;
+      
+      if (kDebugMode) {
+        debugPrint('[ConfigOptimizer] Initialized with settings: ${_settings.toJson()}');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[ConfigOptimizer] Failed to initialize: $e');
+      }
+    }
+  }
+
+  /// Load settings from Hive
+  void _loadSettings() {
+    if (_settingsBox == null) return;
+    
+    try {
+      final data = _settingsBox!.get('settings');
+      if (data != null) {
+        _settings = OptimizerSettings.fromJson(Map<String, dynamic>.from(data));
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[ConfigOptimizer] Error loading settings: $e');
+      }
+    }
+  }
+
+  /// Save settings to Hive
+  Future<void> _saveSettings() async {
+    if (_settingsBox == null) return;
+    
+    try {
+      await _settingsBox!.put('settings', _settings.toJson());
+      if (kDebugMode) {
+        debugPrint('[ConfigOptimizer] Settings saved');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[ConfigOptimizer] Error saving settings: $e');
+      }
+    }
+  }
 
   /// Optimization settings
   static const Map<String, dynamic> defaultOptimizations = {
@@ -85,7 +147,6 @@ class ConfigOptimizerService {
         ];
         break;
       case OptimizationLevel.balanced:
-      default:
         servers = ['1.1.1.1', '8.8.8.8', '9.9.9.9'];
     }
 
@@ -269,7 +330,7 @@ class OptimizationResult {
   });
 }
 
-/// Optimizer Settings Model
+/// Optimizer Settings Model with JSON serialization
 class OptimizerSettings {
   final bool autoOptimize;
   final String preferredDns;
@@ -298,6 +359,24 @@ class OptimizerSettings {
       mtuSize: mtuSize ?? this.mtuSize,
       muxEnabled: muxEnabled ?? this.muxEnabled,
       muxConcurrency: muxConcurrency ?? this.muxConcurrency,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'autoOptimize': autoOptimize,
+    'preferredDns': preferredDns,
+    'mtuSize': mtuSize,
+    'muxEnabled': muxEnabled,
+    'muxConcurrency': muxConcurrency,
+  };
+
+  factory OptimizerSettings.fromJson(Map<String, dynamic> json) {
+    return OptimizerSettings(
+      autoOptimize: json['autoOptimize'] ?? true,
+      preferredDns: json['preferredDns'] ?? '1.1.1.1',
+      mtuSize: json['mtuSize'] ?? 1400,
+      muxEnabled: json['muxEnabled'] ?? true,
+      muxConcurrency: json['muxConcurrency'] ?? 8,
     );
   }
 }

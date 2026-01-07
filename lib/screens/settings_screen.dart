@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../utils/theme_manager.dart';
 import '../services/haptic_service.dart';
 import '../services/split_tunneling_service.dart';
@@ -34,12 +33,24 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     await _themeManager.initialize();
     await _hapticService.initialize();
     await _splitTunnelingService.initialize();
+    // These services are already initialized in main.dart with Hive
+    // but we add listeners for UI updates
+    _configOptimizer.addListener(_onSettingsChanged);
+    _fragmentService.addListener(_onSettingsChanged);
+    _autoReconnect.addListener(_onSettingsChanged);
+    if (mounted) setState(() {});
+  }
+
+  void _onSettingsChanged() {
     if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _configOptimizer.removeListener(_onSettingsChanged);
+    _fragmentService.removeListener(_onSettingsChanged);
+    _autoReconnect.removeListener(_onSettingsChanged);
     super.dispose();
   }
 
@@ -128,6 +139,8 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
             padding: const EdgeInsets.symmetric(vertical: 16),
           ),
         ),
+        // Extra padding at bottom to ensure last item is visible
+        const SizedBox(height: 100),
       ],
     );
   }
@@ -251,17 +264,20 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
           title: 'MTU Size',
           subtitle: '${_configOptimizer.settings.mtuSize} bytes',
           theme: theme,
-          trailing: Slider(
-            value: _configOptimizer.settings.mtuSize.toDouble(),
-            min: 1200,
-            max: 1500,
-            divisions: 30,
-            activeColor: theme.primaryColor,
-            onChanged: (v) {
-              _hapticService.onSliderChange();
-              _configOptimizer.settings = _configOptimizer.settings.copyWith(mtuSize: v.toInt());
-              setState(() {});
-            },
+          trailing: SizedBox(
+            width: 150,
+            child: Slider(
+              value: _configOptimizer.settings.mtuSize.toDouble(),
+              min: 1200,
+              max: 1500,
+              divisions: 30,
+              activeColor: theme.primaryColor,
+              onChanged: (v) {
+                _hapticService.onSliderChange();
+                _configOptimizer.settings = _configOptimizer.settings.copyWith(mtuSize: v.toInt());
+                setState(() {});
+              },
+            ),
           ),
         ),
         
@@ -313,6 +329,13 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
             activeColor: theme.primaryColor,
           ),
         ),
+        _buildSettingCard(
+          icon: Icons.fingerprint,
+          title: 'TLS Fingerprint',
+          subtitle: _fragmentService.settings.tlsFingerprint,
+          theme: theme,
+          onTap: () => _showFingerprintSelector(theme),
+        ),
         
         const SizedBox(height: 24),
         _buildSectionHeader('AUTO-RECONNECT', theme),
@@ -337,17 +360,20 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
           title: 'Reconnect Delay',
           subtitle: '${_autoReconnect.reconnectDelay.inSeconds} seconds',
           theme: theme,
-          trailing: Slider(
-            value: _autoReconnect.reconnectDelay.inSeconds.toDouble(),
-            min: 1,
-            max: 30,
-            divisions: 29,
-            activeColor: theme.primaryColor,
-            onChanged: (v) {
-              _hapticService.onSliderChange();
-              _autoReconnect.setReconnectDelay(Duration(seconds: v.toInt()));
-              setState(() {});
-            },
+          trailing: SizedBox(
+            width: 150,
+            child: Slider(
+              value: _autoReconnect.reconnectDelay.inSeconds.toDouble(),
+              min: 1,
+              max: 30,
+              divisions: 29,
+              activeColor: theme.primaryColor,
+              onChanged: (v) {
+                _hapticService.onSliderChange();
+                _autoReconnect.setReconnectDelay(Duration(seconds: v.toInt()));
+                setState(() {});
+              },
+            ),
           ),
         ),
         _buildSettingCard(
@@ -355,19 +381,24 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
           title: 'Max Retries',
           subtitle: '${_autoReconnect.maxRetries} attempts',
           theme: theme,
-          trailing: Slider(
-            value: _autoReconnect.maxRetries.toDouble(),
-            min: 1,
-            max: 10,
-            divisions: 9,
-            activeColor: theme.primaryColor,
-            onChanged: (v) {
-              _hapticService.onSliderChange();
-              _autoReconnect.setMaxRetries(v.toInt());
-              setState(() {});
-            },
+          trailing: SizedBox(
+            width: 150,
+            child: Slider(
+              value: _autoReconnect.maxRetries.toDouble(),
+              min: 1,
+              max: 10,
+              divisions: 9,
+              activeColor: theme.primaryColor,
+              onChanged: (v) {
+                _hapticService.onSliderChange();
+                _autoReconnect.setMaxRetries(v.toInt());
+                setState(() {});
+              },
+            ),
           ),
         ),
+        // Extra padding at bottom
+        const SizedBox(height: 100),
       ],
     );
   }
@@ -396,7 +427,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                     child: CircularProgressIndicator(color: theme.primaryColor),
                   )
                 : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: const EdgeInsets.only(left: 16, right: 16, bottom: 100),
                     itemCount: _splitTunnelingService.installedApps.length,
                     itemBuilder: (context, index) {
                       final app = _splitTunnelingService.installedApps[index];
@@ -597,7 +628,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
         _buildSettingCard(
           icon: Icons.info,
           title: 'Version',
-          subtitle: '3.0.0',
+          subtitle: '3.0.1',
           theme: theme,
         ),
         _buildSettingCard(
@@ -618,6 +649,8 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
           subtitle: '3.35.4',
           theme: theme,
         ),
+        // Extra padding at bottom
+        const SizedBox(height: 100),
       ],
     );
   }
@@ -737,6 +770,50 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     );
   }
 
+  void _showFingerprintSelector(AppThemeData theme) {
+    final fingerprintOptions = ['chrome', 'firefox', 'safari', 'edge', 'ios', 'android', 'random'];
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: theme.surfaceColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'SELECT TLS FINGERPRINT',
+              style: TextStyle(
+                color: theme.primaryColor,
+                fontFamily: 'JetBrainsMono',
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ...fingerprintOptions.map((fp) => ListTile(
+              leading: Icon(Icons.fingerprint, color: theme.primaryColor),
+              title: Text(fp.toUpperCase(), style: TextStyle(color: theme.textColor)),
+              trailing: _fragmentService.settings.tlsFingerprint == fp
+                  ? Icon(Icons.check_circle, color: theme.primaryColor)
+                  : null,
+              onTap: () {
+                _hapticService.selection();
+                _fragmentService.settings = _fragmentService.settings.copyWith(tlsFingerprint: fp);
+                setState(() {});
+                Navigator.pop(context);
+              },
+            )),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showCreateThemeDialog(AppThemeData theme) {
     Color selectedColor = theme.primaryColor;
     final nameController = TextEditingController();
@@ -759,74 +836,76 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               fontWeight: FontWeight.bold,
             ),
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                style: TextStyle(color: theme.textColor),
-                decoration: InputDecoration(
-                  labelText: 'Theme Name',
-                  labelStyle: TextStyle(color: theme.textColor.withValues(alpha: 0.5)),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: theme.primaryColor.withValues(alpha: 0.3)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderSide: BorderSide(color: theme.primaryColor),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text('Primary Color', style: TextStyle(color: theme.textColor)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  Colors.red,
-                  Colors.pink,
-                  Colors.purple,
-                  Colors.deepPurple,
-                  Colors.indigo,
-                  Colors.blue,
-                  Colors.cyan,
-                  Colors.teal,
-                  Colors.green,
-                  Colors.lime,
-                  Colors.yellow,
-                  Colors.orange,
-                  Colors.deepOrange,
-                ].map((color) => GestureDetector(
-                  onTap: () {
-                    setDialogState(() => selectedColor = color);
-                  },
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: color,
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: selectedColor == color ? Colors.white : Colors.transparent,
-                        width: 3,
-                      ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  style: TextStyle(color: theme.textColor),
+                  decoration: InputDecoration(
+                    labelText: 'Theme Name',
+                    labelStyle: TextStyle(color: theme.textColor.withValues(alpha: 0.5)),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: theme.primaryColor.withValues(alpha: 0.3)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: theme.primaryColor),
                     ),
                   ),
-                )).toList(),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Dark Mode', style: TextStyle(color: theme.textColor)),
-                  Switch(
-                    value: isDark,
-                    onChanged: (v) => setDialogState(() => isDark = v),
-                    activeColor: selectedColor,
-                  ),
-                ],
-              ),
-            ],
+                ),
+                const SizedBox(height: 16),
+                Text('Primary Color', style: TextStyle(color: theme.textColor)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    Colors.red,
+                    Colors.pink,
+                    Colors.purple,
+                    Colors.deepPurple,
+                    Colors.indigo,
+                    Colors.blue,
+                    Colors.cyan,
+                    Colors.teal,
+                    Colors.green,
+                    Colors.lime,
+                    Colors.yellow,
+                    Colors.orange,
+                    Colors.deepOrange,
+                  ].map((color) => GestureDetector(
+                    onTap: () {
+                      setDialogState(() => selectedColor = color);
+                    },
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: selectedColor == color ? Colors.white : Colors.transparent,
+                          width: 3,
+                        ),
+                      ),
+                    ),
+                  )).toList(),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Dark Mode', style: TextStyle(color: theme.textColor)),
+                    Switch(
+                      value: isDark,
+                      onChanged: (v) => setDialogState(() => isDark = v),
+                      activeColor: selectedColor,
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(

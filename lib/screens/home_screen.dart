@@ -344,7 +344,7 @@ class _HomeScreenState extends State<HomeScreen>
         final selectedConfig = provider.selectedConfig;
         
         return SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.only(left: 20, right: 20, top: 20, bottom: 100),
           child: Column(
             children: [
               // Connection Map (when connected)
@@ -369,6 +369,12 @@ class _HomeScreenState extends State<HomeScreen>
               ),
               
               const SizedBox(height: 20),
+              
+              // Tunnel Active Badge (when connected) - Moved outside stats
+              if (_vpnService.isConnected) ...[                
+                const SizedBox(height: 16),
+                _buildTunnelActiveBadge(theme),
+              ],
               
               // Connection Stats (when connected)
               if (_vpnService.isConnected) ...[
@@ -410,11 +416,14 @@ class _HomeScreenState extends State<HomeScreen>
                 const SizedBox(height: 16),
                 
                 if (_showAdvancedStats)
-                  // Speed Graph
-                  SpeedGraphWidget(
-                    vpnService: _vpnService,
-                    primaryColor: theme.primaryColor,
-                    backgroundColor: theme.surfaceColor,
+                  // Speed Graph - with better height control
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 280),
+                    child: SpeedGraphWidget(
+                      vpnService: _vpnService,
+                      primaryColor: theme.primaryColor,
+                      backgroundColor: theme.surfaceColor,
+                    ),
                   )
                 else
                   // Simple stats
@@ -1054,6 +1063,47 @@ class _HomeScreenState extends State<HomeScreen>
       ),
       onTap: onTap,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    );
+  }
+
+  Widget _buildTunnelActiveBadge(AppThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.primaryColor.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.primaryColor.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: theme.primaryColor,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: theme.primaryColor.withValues(alpha: 0.5),
+                  blurRadius: 8,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            'TUNNEL ACTIVE',
+            style: TextStyle(
+              color: theme.primaryColor,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              fontFamily: 'JetBrainsMono',
+              letterSpacing: 1,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
