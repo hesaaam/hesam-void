@@ -39,6 +39,7 @@ class AppTheme {
   static const Color protocolVmess = Color(0xFF00D9FF);
   static const Color protocolTrojan = Color(0xFFFF6B00);
   static const Color protocolShadowsocks = Color(0xFF9D00FF);
+  static const Color protocolSsh = Color(0xFFFFD700); // Golden color for SSH
   
   // Gradients
   static const LinearGradient primaryGradient = LinearGradient(
@@ -315,6 +316,13 @@ class AppTheme {
       case 'ss':
       case 'shadowsocks':
         return protocolShadowsocks;
+      case 'ssh':
+      case 'ssh-direct':
+      case 'ssh-ws':
+      case 'ssh-ssl':
+      case 'ssh-tls':
+      case 'ssh-dns':
+        return protocolSsh;
       default:
         return textMuted;
     }

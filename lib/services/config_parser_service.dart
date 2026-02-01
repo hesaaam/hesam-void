@@ -1,13 +1,15 @@
 import 'dart:convert';
 import 'package:uuid/uuid.dart';
 import '../models/vpn_config.dart';
+import '../models/ssh_config.dart';
 
 /// Professional VPN Configuration Parser
-/// Supports: VLESS, VMess, Trojan, Shadowsocks
+/// Supports: VLESS, VMess, Trojan, Shadowsocks, SSH (npvt-ssh://)
 class ConfigParserService {
   static const _uuid = Uuid();
 
-  /// Parse a single config URL
+  /// Parse a single config URL - returns VpnConfig or null
+  /// For SSH configs, use parseSshConfig() instead
   static VpnConfig? parseConfig(String url) {
     url = url.trim();
     if (url.isEmpty) return null;
@@ -21,12 +23,62 @@ class ConfigParserService {
         return _parseTrojan(url);
       } else if (url.startsWith('ss://')) {
         return _parseShadowsocks(url);
+      } else if (url.startsWith('npvt-ssh://') || url.startsWith('ssh://')) {
+        // Convert SSH to VpnConfig for unified handling
+        return _parseSshToVpnConfig(url);
       }
     } catch (e) {
       // Return null for unparseable configs
       return null;
     }
     return null;
+  }
+
+  /// Parse SSH config from npvt-ssh:// URL
+  static SshConfig? parseSshConfig(String url) {
+    url = url.trim();
+    if (url.isEmpty) return null;
+
+    try {
+      if (url.startsWith('npvt-ssh://')) {
+        return SshConfig.fromNpvtUrl(url, _uuid.v4());
+      }
+    } catch (e) {
+      return null;
+    }
+    return null;
+  }
+
+  /// Convert SSH URL to VpnConfig for unified storage
+  static VpnConfig? _parseSshToVpnConfig(String url) {
+    try {
+      SshConfig? sshConfig;
+      
+      if (url.startsWith('npvt-ssh://')) {
+        sshConfig = SshConfig.fromNpvtUrl(url, _uuid.v4());
+      }
+      
+      if (sshConfig == null) return null;
+
+      // Convert SSH config to VpnConfig format
+      return VpnConfig(
+        id: sshConfig.id,
+        name: sshConfig.remarks.isNotEmpty ? sshConfig.remarks : 'SSH Server',
+        rawUrl: url,
+        protocolString: 'ssh',
+        address: sshConfig.sshHost,
+        port: sshConfig.sshPort,
+        uuid: sshConfig.sshUsername, // Store username in uuid field
+        password: sshConfig.sshPassword,
+        transportString: sshConfig.configType.shortName.toLowerCase(),
+        securityString: sshConfig.sni != null && sshConfig.sni!.isNotEmpty ? 'tls' : 'none',
+        sni: sshConfig.sni,
+        host: sshConfig.httpProxy,
+        encryption: sshConfig.tlsVersion,
+      );
+    } catch (e) {
+      return null;
+    }
   }
 
   /// Parse multiple configs from text (one per line or separated)
@@ -250,7 +302,15 @@ class ConfigParserService {
     return url.startsWith('vless://') ||
         url.startsWith('vmess://') ||
         url.startsWith('trojan://') ||
-        url.startsWith('ss://');
+        url.startsWith('ss://') ||
+        url.startsWith('npvt-ssh://') ||
+        url.startsWith('ssh://');
+  }
+
+  /// Check if URL is SSH protocol
+  static bool isSshUrl(String url) {
+    url = url.trim().toLowerCase();
+    return url.startsWith('npvt-ssh://') || url.startsWith('ssh://');
   }
 
   /// Get protocol type from URL without full parsing
@@ -260,6 +320,29 @@ class ConfigParserService {
     if (url.startsWith('vmess://')) return VpnProtocol.vmess;
     if (url.startsWith('trojan://')) return VpnProtocol.trojan;
     if (url.startsWith('ss://')) return VpnProtocol.shadowsocks;
+    if (url.startsWith('npvt-ssh://') || url.startsWith('ssh://')) return VpnProtocol.ssh;
     return VpnProtocol.unknown;
+  }
+
+  /// Get detailed info from SSH config URL
+  static Map<String, dynamic>? getSshConfigDetails(String url) {
+    try {
+      final sshConfig = parseSshConfig(url);
+      if (sshConfig == null) return null;
+
+      return {
+        'type': sshConfig.configType.displayName,
+        'host': sshConfig.sshHost,
+        'port': sshConfig.sshPort,
+        'username': sshConfig.sshUsername,
+        'remarks': sshConfig.remarks,
+        'hasSni': sshConfig.sni != null && sshConfig.sni!.isNotEmpty,
+        'tlsVersion': sshConfig.tlsVersion,
+        'dnsMode': sshConfig.dnsTTMode.name,
+        'udpgwPort': sshConfig.udpgwPort,
+      };
+    } catch (e) {
+      return null;
+    }
   }
 }

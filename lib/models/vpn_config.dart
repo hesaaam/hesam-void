@@ -8,6 +8,7 @@ enum VpnProtocol {
   vmess,
   trojan,
   shadowsocks,
+  ssh,
   unknown,
 }
 
@@ -22,6 +23,8 @@ extension VpnProtocolExtension on VpnProtocol {
         return 'Trojan';
       case VpnProtocol.shadowsocks:
         return 'Shadowsocks';
+      case VpnProtocol.ssh:
+        return 'SSH';
       case VpnProtocol.unknown:
         return 'Unknown';
     }
@@ -37,6 +40,8 @@ extension VpnProtocolExtension on VpnProtocol {
         return 'TR';
       case VpnProtocol.shadowsocks:
         return 'SS';
+      case VpnProtocol.ssh:
+        return 'SSH';
       case VpnProtocol.unknown:
         return '??';
     }
@@ -175,10 +180,26 @@ class VpnConfig extends HiveObject {
       case 'ss':
       case 'shadowsocks':
         return VpnProtocol.shadowsocks;
+      case 'ssh':
+      case 'ssh-direct':
+      case 'ssh-ws':
+      case 'ssh-ssl':
+      case 'ssh-tls':
+      case 'ssh-dns':
+        return VpnProtocol.ssh;
       default:
         return VpnProtocol.unknown;
     }
   }
+
+  /// Check if this is an SSH config
+  bool get isSsh => protocol == VpnProtocol.ssh;
+
+  /// Get SSH username (stored in uuid field for SSH configs)
+  String? get sshUsername => isSsh ? uuid : null;
+
+  /// Get SSH password (stored in password field)
+  String? get sshPassword => isSsh ? password : null;
 
   TransportType get transport {
     switch (transportString.toLowerCase()) {

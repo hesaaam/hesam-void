@@ -206,6 +206,11 @@ class VpnService extends ChangeNotifier {
       if (!initialized) return false;
     }
 
+    // Handle SSH configs differently - they require a separate SSH library
+    if (config.isSsh) {
+      return _connectSsh(config);
+    }
+
     try {
       _status = VpnStatus.connecting;
       _currentConfig = config;
@@ -263,6 +268,41 @@ class VpnService extends ChangeNotifier {
       _errorMessage = 'Connection failed: $e';
       if (kDebugMode) {
         debugPrint('[VpnService] Connection error: $e');
+      }
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Connect to SSH server - Currently shows as stored config (SSH tunneling requires native implementation)
+  /// SSH configs are stored and displayed but actual SSH tunneling requires additional native code
+  Future<bool> _connectSsh(VpnConfig config) async {
+    try {
+      _status = VpnStatus.connecting;
+      _currentConfig = config;
+      _errorMessage = null;
+      notifyListeners();
+
+      if (kDebugMode) {
+        debugPrint('[VpnService] SSH Config detected: ${config.name}');
+        debugPrint('[VpnService] SSH Host: ${config.address}:${config.port}');
+        debugPrint('[VpnService] SSH User: ${config.sshUsername}');
+      }
+
+      // SSH configs are stored and can be displayed
+      // Actual SSH tunneling requires native Android implementation
+      // For now, show status as stored/ready for export to other apps
+      
+      _status = VpnStatus.error;
+      _errorMessage = 'SSH tunneling requires native implementation. Config is stored and can be exported.';
+      notifyListeners();
+      
+      return false;
+    } catch (e) {
+      _status = VpnStatus.error;
+      _errorMessage = 'SSH connection failed: $e';
+      if (kDebugMode) {
+        debugPrint('[VpnService] SSH error: $e');
       }
       notifyListeners();
       return false;
