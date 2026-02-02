@@ -282,7 +282,8 @@ class VpnService extends ChangeNotifier {
     }
   }
 
-  /// Connect to SSH server using dartssh2 real SSH tunneling
+  /// Connect to SSH server using dartssh2 + V2Ray VPN mode
+  /// This creates SSH tunnel AND routes all device traffic through it
   Future<bool> _connectSsh(VpnConfig config) async {
     try {
       _status = VpnStatus.connecting;
@@ -312,7 +313,6 @@ class VpnService extends ChangeNotifier {
           if (kDebugMode) {
             debugPrint('[VpnService] Failed to parse NPVT URL: $e');
           }
-          // Fall back to VpnConfig fields
           sshConfig = null;
         }
       }
@@ -324,7 +324,7 @@ class VpnService extends ChangeNotifier {
         configType: _parseSshConfigType(config.transportString),
         sshHost: config.address,
         sshPort: config.port,
-        sshUsername: config.uuid ?? '', // Username stored in uuid field
+        sshUsername: config.uuid ?? '',
         sshPassword: config.password ?? '',
         sni: config.sni,
         tlsVersion: config.encryption ?? 'DEFAULT',
@@ -349,30 +349,61 @@ class VpnService extends ChangeNotifier {
         debugPrint('[VpnService] Connecting SSH: ${sshConfig.sshUsername}@${sshConfig.sshHost}:${sshConfig.sshPort}');
       }
 
-      // Use SSH Tunnel Service for real connection
+      // Step 1: Start SSH tunnel (creates local SOCKS proxy)
       final sshService = SshTunnelService();
-      final connected = await sshService.connect(sshConfig);
+      final sshConnected = await sshService.connect(sshConfig);
 
-      if (connected) {
-        _status = VpnStatus.connected;
-        // Show proxy port in a user-friendly way
-        _errorMessage = null;
-        _sshProxyPort = sshService.localPort;
-        
-        // Start monitoring SSH stats
-        _monitorSshStats(sshService);
-        
-        if (kDebugMode) {
-          debugPrint('[VpnService] SSH connected! Proxy: ${sshService.proxyAddress}');
-        }
-      } else {
+      if (!sshConnected) {
         _status = VpnStatus.error;
         _errorMessage = sshService.errorMessage ?? 'SSH connection failed';
         _sshProxyPort = null;
+        notifyListeners();
+        return false;
       }
+
+      _sshProxyPort = sshService.localPort;
       
-      notifyListeners();
-      return connected;
+      if (kDebugMode) {
+        debugPrint('[VpnService] SSH tunnel established on port $_sshProxyPort');
+        debugPrint('[VpnService] Starting V2Ray VPN with SOCKS proxy...');
+      }
+
+      // Step 2: Request VPN permission
+      bool hasPermission = await flutterV2ray.requestPermission();
+      if (!hasPermission) {
+        await sshService.disconnect();
+        _status = VpnStatus.error;
+        _errorMessage = 'VPN permission denied';
+        notifyListeners();
+        return false;
+      }
+
+      // Step 3: Create V2Ray config that uses SSH SOCKS proxy as outbound
+      final v2rayConfig = _buildSshV2RayConfig(sshConfig, _sshProxyPort!);
+      
+      if (kDebugMode) {
+        debugPrint('[VpnService] V2Ray config for SSH:');
+        debugPrint(v2rayConfig);
+      }
+
+      // Step 4: Start V2Ray VPN mode with SSH as backend
+      await flutterV2ray.startV2Ray(
+        remark: sshConfig.remarks.isNotEmpty ? sshConfig.remarks : 'SSH Server',
+        config: v2rayConfig,
+        blockedApps: null,
+        bypassSubnets: bypassSubnets,
+        proxyOnly: false, // VPN Mode - routes ALL traffic
+        notificationDisconnectButtonName: "Disconnect",
+      );
+
+      // Monitor SSH stats
+      _monitorSshStats(sshService);
+      
+      if (kDebugMode) {
+        debugPrint('[VpnService] SSH + VPN started successfully!');
+      }
+
+      return true;
       
     } catch (e) {
       _status = VpnStatus.error;
@@ -383,6 +414,68 @@ class VpnService extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  /// Build V2Ray JSON config that routes traffic through local SSH SOCKS proxy
+  String _buildSshV2RayConfig(SshConfig sshConfig, int localPort) {
+    return '''
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "port": 10808,
+      "listen": "127.0.0.1",
+      "protocol": "socks",
+      "settings": {
+        "udp": true
+      },
+      "tag": "socks-in"
+    },
+    {
+      "port": 10809,
+      "listen": "127.0.0.1",
+      "protocol": "http",
+      "tag": "http-in"
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "socks",
+      "settings": {
+        "servers": [
+          {
+            "address": "127.0.0.1",
+            "port": $localPort
+          }
+        ]
+      },
+      "tag": "ssh-proxy"
+    },
+    {
+      "protocol": "freedom",
+      "settings": {},
+      "tag": "direct"
+    }
+  ],
+  "routing": {
+    "domainStrategy": "AsIs",
+    "rules": [
+      {
+        "type": "field",
+        "ip": ["geoip:private"],
+        "outboundTag": "direct"
+      },
+      {
+        "type": "field",
+        "port": "0-65535",
+        "outboundTag": "ssh-proxy"
+      }
+    ]
+  }
+}
+''';
   }
 
   /// Parse SSH config type from transport string
@@ -427,7 +520,7 @@ class VpnService extends ChangeNotifier {
     });
   }
 
-  /// Disconnect VPN
+  /// Disconnect VPN (and SSH if active)
   Future<void> disconnect() async {
     if (kIsWeb || !_isInitialized) return;
 
@@ -436,16 +529,27 @@ class VpnService extends ChangeNotifier {
       notifyListeners();
 
       if (kDebugMode) {
-        debugPrint('[VpnService] Stopping V2Ray...');
+        debugPrint('[VpnService] Stopping VPN...');
       }
 
+      // Stop V2Ray VPN
       await flutterV2ray.stopV2Ray();
+      
+      // Also stop SSH tunnel if it was active
+      if (_sshProxyPort != null) {
+        if (kDebugMode) {
+          debugPrint('[VpnService] Stopping SSH tunnel...');
+        }
+        final sshService = SshTunnelService();
+        await sshService.disconnect();
+        _sshProxyPort = null;
+      }
       
       _status = VpnStatus.disconnected;
       _stats = VpnStats();
       
       if (kDebugMode) {
-        debugPrint('[VpnService] V2Ray stopped successfully');
+        debugPrint('[VpnService] VPN stopped successfully');
       }
       
       notifyListeners();
