@@ -100,6 +100,7 @@ class VpnService extends ChangeNotifier {
   String? _errorMessage;
   String? _coreVersion;
   bool _isInitialized = false;
+  int? _sshProxyPort; // SSH proxy port when connected
 
   // Getters
   VpnStatus get status => _status;
@@ -111,6 +112,11 @@ class VpnService extends ChangeNotifier {
   bool get isConnected => _status == VpnStatus.connected;
   bool get isConnecting => _status == VpnStatus.connecting;
   bool get isDisconnected => _status == VpnStatus.disconnected;
+  
+  // SSH specific getters
+  int? get sshProxyPort => _sshProxyPort;
+  String? get sshProxyAddress => _sshProxyPort != null ? '127.0.0.1:$_sshProxyPort' : null;
+  bool get isSshConnection => _currentConfig?.isSsh ?? false;
 
   /// Initialize V2Ray Core - MUST be called before any VPN operations
   Future<bool> initialize() async {
@@ -286,12 +292,33 @@ class VpnService extends ChangeNotifier {
 
       if (kDebugMode) {
         debugPrint('[VpnService] SSH Config detected: ${config.name}');
-        debugPrint('[VpnService] SSH Host: ${config.address}:${config.port}');
-        debugPrint('[VpnService] SSH User: ${config.sshUsername}');
+        debugPrint('[VpnService] Raw URL: ${config.rawUrl.substring(0, 50)}...');
       }
 
-      // Create SshConfig from VpnConfig
-      final sshConfig = SshConfig(
+      // CRITICAL FIX: Parse SSH config directly from rawUrl for accurate credentials
+      SshConfig? sshConfig;
+      
+      if (config.rawUrl.startsWith('npvt-ssh://')) {
+        // Parse directly from NPVT-SSH URL for accurate credentials
+        try {
+          sshConfig = SshConfig.fromNpvtUrl(config.rawUrl, config.id);
+          if (kDebugMode) {
+            debugPrint('[VpnService] Parsed from NPVT URL:');
+            debugPrint('[VpnService]   Host: ${sshConfig.sshHost}:${sshConfig.sshPort}');
+            debugPrint('[VpnService]   Username: ${sshConfig.sshUsername}');
+            debugPrint('[VpnService]   Type: ${sshConfig.configType.displayName}');
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            debugPrint('[VpnService] Failed to parse NPVT URL: $e');
+          }
+          // Fall back to VpnConfig fields
+          sshConfig = null;
+        }
+      }
+      
+      // Fallback: Create SshConfig from VpnConfig fields if URL parsing failed
+      sshConfig ??= SshConfig(
         id: config.id,
         remarks: config.name,
         configType: _parseSshConfigType(config.transportString),
@@ -303,13 +330,34 @@ class VpnService extends ChangeNotifier {
         tlsVersion: config.encryption ?? 'DEFAULT',
       );
 
+      // Validate SSH credentials
+      if (sshConfig.sshHost.isEmpty) {
+        _status = VpnStatus.error;
+        _errorMessage = 'SSH host is empty';
+        notifyListeners();
+        return false;
+      }
+      
+      if (sshConfig.sshUsername.isEmpty) {
+        _status = VpnStatus.error;
+        _errorMessage = 'SSH username is empty';
+        notifyListeners();
+        return false;
+      }
+
+      if (kDebugMode) {
+        debugPrint('[VpnService] Connecting SSH: ${sshConfig.sshUsername}@${sshConfig.sshHost}:${sshConfig.sshPort}');
+      }
+
       // Use SSH Tunnel Service for real connection
       final sshService = SshTunnelService();
       final connected = await sshService.connect(sshConfig);
 
       if (connected) {
         _status = VpnStatus.connected;
+        // Show proxy port in a user-friendly way
         _errorMessage = null;
+        _sshProxyPort = sshService.localPort;
         
         // Start monitoring SSH stats
         _monitorSshStats(sshService);
@@ -320,6 +368,7 @@ class VpnService extends ChangeNotifier {
       } else {
         _status = VpnStatus.error;
         _errorMessage = sshService.errorMessage ?? 'SSH connection failed';
+        _sshProxyPort = null;
       }
       
       notifyListeners();

@@ -57,6 +57,7 @@ class SshTunnelService extends ChangeNotifier {
   // Local proxy server
   ServerSocket? _proxyServer;
   int _localPort = 1080; // Default SOCKS port
+  static const List<int> _preferredPorts = [1080, 1081, 8080, 8888, 9050, 7890];
   
   // Connection tracking
   int _totalUpload = 0;
@@ -152,18 +153,53 @@ class SshTunnelService extends ChangeNotifier {
 
   /// Start local proxy server that forwards traffic through SSH
   Future<void> _startProxyServer(SshConfig config) async {
+    // Try preferred ports first, then fall back to random
+    for (final port in _preferredPorts) {
+      try {
+        _proxyServer = await ServerSocket.bind(
+          InternetAddress.loopbackIPv4,
+          port,
+        );
+        _localPort = port;
+        
+        if (kDebugMode) {
+          debugPrint('[SSH] Proxy server started on port $_localPort');
+        }
+
+        // Handle incoming connections
+        _proxyServer!.listen(
+          (Socket clientSocket) async {
+            await _handleProxyConnection(clientSocket, config);
+          },
+          onError: (error) {
+            if (kDebugMode) {
+              debugPrint('[SSH] Proxy server error: $error');
+            }
+          },
+        );
+        
+        return; // Success, exit loop
+        
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('[SSH] Port $port in use, trying next...');
+        }
+        continue; // Try next port
+      }
+    }
+    
+    // All preferred ports failed, try a random port
     try {
-      // Try to bind to local port
       _proxyServer = await ServerSocket.bind(
         InternetAddress.loopbackIPv4,
-        _localPort,
+        0, // Let OS assign a free port
       );
-
+      _localPort = _proxyServer!.port;
+      
       if (kDebugMode) {
-        debugPrint('[SSH] Proxy server started on port $_localPort');
+        debugPrint('[SSH] Proxy server started on random port $_localPort');
       }
 
-      // Handle incoming connections
       _proxyServer!.listen(
         (Socket clientSocket) async {
           await _handleProxyConnection(clientSocket, config);
@@ -174,15 +210,8 @@ class SshTunnelService extends ChangeNotifier {
           }
         },
       );
-
     } catch (e) {
-      // Port might be in use, try another
-      if (e.toString().contains('Address already in use')) {
-        _localPort = 1081 + DateTime.now().millisecond % 100;
-        await _startProxyServer(config);
-      } else {
-        rethrow;
-      }
+      throw Exception('Failed to start proxy server: $e');
     }
   }
 
