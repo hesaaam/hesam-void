@@ -179,31 +179,62 @@ class ConfigProvider extends ChangeNotifier {
     }
   }
 
-  /// Test ping for all configs
+  /// Test ping for all configs - OPTIMIZED with concurrent testing
   Future<void> testAllPings() async {
     _isTestingPing = true;
     notifyListeners();
 
     try {
+      // Use optimized concurrent ping testing
+      final results = await PingService.testMultiplePings(
+        _configs,
+        concurrency: 10, // Test 10 at a time for speed
+        onProgress: (completed, total) {
+          // Update progress - show which config is being tested
+          if (completed < _configs.length) {
+            _testingConfigId = _configs[completed].id;
+            notifyListeners();
+          }
+        },
+      );
+      
+      // Update all configs with results
       for (int i = 0; i < _configs.length; i++) {
-        _testingConfigId = _configs[i].id;
-        notifyListeners();
-
-        final ping = await PingService.testPing(_configs[i]);
+        final ping = results[_configs[i].id];
         final updated = _configs[i].copyWith(
           ping: ping,
           lastTestedAt: DateTime.now(),
         );
         _configs[i] = updated;
-        await StorageService.updateConfig(updated);
-        
-        notifyListeners();
+        // Batch save for better performance
       }
+      
+      // Save all updates at once
+      await StorageService.saveConfigs(_configs);
+      
     } catch (e) {
       _error = 'Failed to test pings: $e';
     } finally {
       _isTestingPing = false;
       _testingConfigId = null;
+      notifyListeners();
+    }
+  }
+  
+  /// Find and select fastest config automatically
+  Future<VpnConfig?> selectFastest() async {
+    _isTestingPing = true;
+    notifyListeners();
+    
+    try {
+      final fastest = await PingService.findFastest(_configs);
+      if (fastest != null) {
+        _selectedConfig = fastest;
+        notifyListeners();
+      }
+      return fastest;
+    } finally {
+      _isTestingPing = false;
       notifyListeners();
     }
   }

@@ -4,9 +4,23 @@ import 'package:flutter/foundation.dart';
 import '../models/vpn_config.dart';
 
 /// Professional Ping/Latency Testing Service
+/// Optimized for fast concurrent testing
 class PingService {
-  /// Test ping for a single config
-  static Future<int?> testPing(VpnConfig config) async {
+  // Connection pool for reuse
+  static final Map<String, DateTime> _lastPingTime = {};
+  static final Map<String, int?> _pingCache = {};
+  static const Duration _cacheExpiry = Duration(minutes: 2);
+  
+  /// Test ping for a single config with caching
+  static Future<int?> testPing(VpnConfig config, {bool useCache = true}) async {
+    // Check cache first for faster response
+    if (useCache) {
+      final cachedPing = _getCachedPing(config.id);
+      if (cachedPing != null) {
+        return cachedPing;
+      }
+    }
+    
     try {
       final stopwatch = Stopwatch()..start();
       
@@ -15,20 +29,47 @@ class PingService {
         return await _httpPing(config.address, config.port);
       }
       
-      // For mobile, try socket connection
+      // For mobile, try socket connection with shorter timeout
       final socket = await Socket.connect(
         config.address,
         config.port,
-        timeout: const Duration(seconds: 5),
+        timeout: const Duration(seconds: 3), // Reduced from 5s to 3s
       );
       
       stopwatch.stop();
       await socket.close();
       
-      return stopwatch.elapsedMilliseconds;
+      final ping = stopwatch.elapsedMilliseconds;
+      _cachePing(config.id, ping);
+      
+      return ping;
     } catch (e) {
+      _cachePing(config.id, null);
       return null; // Connection failed
     }
+  }
+  
+  /// Get cached ping if still valid
+  static int? _getCachedPing(String configId) {
+    final lastTime = _lastPingTime[configId];
+    if (lastTime != null && 
+        DateTime.now().difference(lastTime) < _cacheExpiry &&
+        _pingCache.containsKey(configId)) {
+      return _pingCache[configId];
+    }
+    return null;
+  }
+  
+  /// Cache ping result
+  static void _cachePing(String configId, int? ping) {
+    _pingCache[configId] = ping;
+    _lastPingTime[configId] = DateTime.now();
+  }
+  
+  /// Clear ping cache
+  static void clearCache() {
+    _pingCache.clear();
+    _lastPingTime.clear();
   }
 
   /// HTTP-based ping for web platform
@@ -82,22 +123,90 @@ class PingService {
     return 100 + (DateTime.now().millisecond % 150);
   }
 
-  /// Test ping for multiple configs
-  static Future<Map<String, int?>> testMultiplePings(List<VpnConfig> configs) async {
+  /// Test ping for multiple configs - OPTIMIZED with concurrent batches
+  static Future<Map<String, int?>> testMultiplePings(
+    List<VpnConfig> configs, {
+    int concurrency = 10, // Test 10 configs at a time
+    void Function(int completed, int total)? onProgress,
+  }) async {
     final results = <String, int?>{};
     
-    // Test in parallel with limit
-    final futures = configs.map((config) async {
-      final ping = await testPing(config);
-      return MapEntry(config.id, ping);
-    });
-    
-    final entries = await Future.wait(futures);
-    for (final entry in entries) {
-      results[entry.key] = entry.value;
+    // Process in batches for better performance
+    for (int i = 0; i < configs.length; i += concurrency) {
+      final batch = configs.skip(i).take(concurrency).toList();
+      
+      // Test batch concurrently
+      final futures = batch.map((config) async {
+        final ping = await testPing(config, useCache: false);
+        return MapEntry(config.id, ping);
+      });
+      
+      final entries = await Future.wait(futures);
+      for (final entry in entries) {
+        results[entry.key] = entry.value;
+      }
+      
+      // Report progress
+      final completed = (i + batch.length).clamp(0, configs.length);
+      onProgress?.call(completed, configs.length);
     }
     
     return results;
+  }
+  
+  /// Fast ping test - only tests first successful connection
+  static Future<int?> fastPing(VpnConfig config) async {
+    try {
+      final stopwatch = Stopwatch()..start();
+      
+      if (kIsWeb) {
+        return await _httpPing(config.address, config.port);
+      }
+      
+      // Ultra-short timeout for fast response
+      final socket = await Socket.connect(
+        config.address,
+        config.port,
+        timeout: const Duration(seconds: 2),
+      );
+      
+      stopwatch.stop();
+      socket.destroy(); // Faster than close()
+      
+      return stopwatch.elapsedMilliseconds;
+    } catch (e) {
+      return null;
+    }
+  }
+  
+  /// Find fastest server from list
+  static Future<VpnConfig?> findFastest(List<VpnConfig> configs) async {
+    if (configs.isEmpty) return null;
+    
+    // Test all concurrently and return first successful
+    final completer = Completer<VpnConfig?>();
+    int bestPing = 999999;
+    VpnConfig? bestConfig;
+    int completed = 0;
+    
+    for (final config in configs) {
+      fastPing(config).then((ping) {
+        completed++;
+        if (ping != null && ping < bestPing) {
+          bestPing = ping;
+          bestConfig = config;
+        }
+        if (completed == configs.length && !completer.isCompleted) {
+          completer.complete(bestConfig);
+        }
+      });
+    }
+    
+    // Return after 5 seconds max or when all complete
+    return Future.any([
+      completer.future,
+      Future.delayed(const Duration(seconds: 5), () => bestConfig),
+    ]);
   }
 
   /// Sort configs by ping (fastest first)

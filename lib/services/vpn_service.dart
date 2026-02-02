@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_v2ray/flutter_v2ray.dart';
 import '../models/vpn_config.dart';
+import '../models/ssh_config.dart';
+import 'ssh_tunnel_service.dart';
 
 /// VPN Connection States
 enum VpnStatus {
@@ -274,8 +276,7 @@ class VpnService extends ChangeNotifier {
     }
   }
 
-  /// Connect to SSH server - Currently shows as stored config (SSH tunneling requires native implementation)
-  /// SSH configs are stored and displayed but actual SSH tunneling requires additional native code
+  /// Connect to SSH server using dartssh2 real SSH tunneling
   Future<bool> _connectSsh(VpnConfig config) async {
     try {
       _status = VpnStatus.connecting;
@@ -289,15 +290,41 @@ class VpnService extends ChangeNotifier {
         debugPrint('[VpnService] SSH User: ${config.sshUsername}');
       }
 
-      // SSH configs are stored and can be displayed
-      // Actual SSH tunneling requires native Android implementation
-      // For now, show status as stored/ready for export to other apps
+      // Create SshConfig from VpnConfig
+      final sshConfig = SshConfig(
+        id: config.id,
+        remarks: config.name,
+        configType: _parseSshConfigType(config.transportString),
+        sshHost: config.address,
+        sshPort: config.port,
+        sshUsername: config.uuid ?? '', // Username stored in uuid field
+        sshPassword: config.password ?? '',
+        sni: config.sni,
+        tlsVersion: config.encryption ?? 'DEFAULT',
+      );
+
+      // Use SSH Tunnel Service for real connection
+      final sshService = SshTunnelService();
+      final connected = await sshService.connect(sshConfig);
+
+      if (connected) {
+        _status = VpnStatus.connected;
+        _errorMessage = null;
+        
+        // Start monitoring SSH stats
+        _monitorSshStats(sshService);
+        
+        if (kDebugMode) {
+          debugPrint('[VpnService] SSH connected! Proxy: ${sshService.proxyAddress}');
+        }
+      } else {
+        _status = VpnStatus.error;
+        _errorMessage = sshService.errorMessage ?? 'SSH connection failed';
+      }
       
-      _status = VpnStatus.error;
-      _errorMessage = 'SSH tunneling requires native implementation. Config is stored and can be exported.';
       notifyListeners();
+      return connected;
       
-      return false;
     } catch (e) {
       _status = VpnStatus.error;
       _errorMessage = 'SSH connection failed: $e';
@@ -307,6 +334,48 @@ class VpnService extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  /// Parse SSH config type from transport string
+  SshConfigType _parseSshConfigType(String transport) {
+    switch (transport.toLowerCase()) {
+      case 'ssh-ws':
+      case 'websocket':
+        return SshConfigType.websocket;
+      case 'ssh-ssl':
+      case 'ssh-tls':
+      case 'ssl':
+      case 'tls':
+        return SshConfigType.ssl;
+      case 'ssh-dns':
+      case 'slowdns':
+        return SshConfigType.slowDns;
+      default:
+        return SshConfigType.direct;
+    }
+  }
+
+  /// Monitor SSH tunnel statistics
+  void _monitorSshStats(SshTunnelService sshService) {
+    sshService.addListener(() {
+      if (sshService.isConnected) {
+        _stats = VpnStats(
+          uploadSpeed: 0, // SSH doesn't provide real-time speed
+          downloadSpeed: 0,
+          totalUpload: sshService.stats.uploadBytes,
+          totalDownload: sshService.stats.downloadBytes,
+          duration: sshService.stats.duration,
+        );
+        notifyListeners();
+      } else if (sshService.status == SshStatus.disconnected) {
+        _status = VpnStatus.disconnected;
+        notifyListeners();
+      } else if (sshService.status == SshStatus.error) {
+        _status = VpnStatus.error;
+        _errorMessage = sshService.errorMessage;
+        notifyListeners();
+      }
+    });
   }
 
   /// Disconnect VPN
