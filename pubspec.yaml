@@ -1,7 +1,7 @@
 name: hesam_void
 description: "Hesam Void - Professional VPN Configuration Manager with advanced protocol support for VLESS, VMess, Trojan, Shadowsocks, SSH"
 publish_to: 'none'
-version: 3.5.0+9
+version: 3.6.0+10
 
 environment:
   sdk: ^3.9.0
