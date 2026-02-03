@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_v2ray/flutter_v2ray.dart';
 import '../models/vpn_config.dart';
@@ -349,6 +350,25 @@ class VpnService extends ChangeNotifier {
         debugPrint('[VpnService] Connecting SSH: ${sshConfig.sshUsername}@${sshConfig.sshHost}:${sshConfig.sshPort}');
       }
 
+      // Step 0: CRITICAL - Resolve SSH server IP BEFORE connecting
+      // This IP must be bypassed from VPN to avoid circular connection
+      String? sshServerIp;
+      try {
+        final addresses = await InternetAddress.lookup(sshConfig.sshHost);
+        if (addresses.isNotEmpty) {
+          sshServerIp = addresses.first.address;
+          if (kDebugMode) {
+            debugPrint('[VpnService] SSH server IP resolved: $sshServerIp');
+          }
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('[VpnService] Failed to resolve SSH server IP: $e');
+        }
+        // If resolution fails, the host might already be an IP
+        sshServerIp = sshConfig.sshHost;
+      }
+
       // Step 1: Start SSH tunnel (creates local SOCKS proxy)
       final sshService = SshTunnelService();
       final sshConnected = await sshService.connect(sshConfig);
@@ -386,12 +406,26 @@ class VpnService extends ChangeNotifier {
         debugPrint(v2rayConfig);
       }
 
-      // Step 4: Start V2Ray VPN mode with SSH as backend
+      // Step 4: Create bypass list that includes SSH server IP
+      // CRITICAL: SSH server must bypass VPN to avoid circular connection!
+      final sshBypassSubnets = List<String>.from(bypassSubnets);
+      if (sshServerIp != null && sshServerIp.isNotEmpty) {
+        // Add SSH server IP as /32 to bypass VPN
+        final sshServerSubnet = '$sshServerIp/32';
+        if (!sshBypassSubnets.contains(sshServerSubnet)) {
+          sshBypassSubnets.add(sshServerSubnet);
+          if (kDebugMode) {
+            debugPrint('[VpnService] Added SSH server to bypass: $sshServerSubnet');
+          }
+        }
+      }
+
+      // Step 5: Start V2Ray VPN mode with SSH as backend
       await flutterV2ray.startV2Ray(
         remark: sshConfig.remarks.isNotEmpty ? sshConfig.remarks : 'SSH Server',
         config: v2rayConfig,
         blockedApps: null,
-        bypassSubnets: bypassSubnets,
+        bypassSubnets: sshBypassSubnets, // IMPORTANT: Includes SSH server bypass!
         proxyOnly: false, // VPN Mode - routes ALL traffic
         notificationDisconnectButtonName: "Disconnect",
       );
@@ -417,12 +451,17 @@ class VpnService extends ChangeNotifier {
   }
 
   /// Build V2Ray JSON config that routes traffic through local SSH SOCKS proxy
-  /// FIXED: Proper SOCKS5 outbound configuration for SSH tunnel
+  /// CRITICAL FIX: SSH server must be bypassed to avoid circular connection!
+  /// Traffic flow: App → VPN → V2Ray → SOCKS5 (127.0.0.1:localPort) → SSH → Internet
+  /// BUT: SSH connection itself must go DIRECT, not through VPN!
   String _buildSshV2RayConfig(SshConfig sshConfig, int localPort) {
+    // CRITICAL: SSH server address must be bypassed to prevent loop
+    final sshServerHost = sshConfig.sshHost;
+    
     return '''
 {
   "log": {
-    "loglevel": "debug"
+    "loglevel": "warning"
   },
   "inbounds": [
     {
@@ -431,7 +470,7 @@ class VpnService extends ChangeNotifier {
       "protocol": "socks",
       "settings": {
         "auth": "noauth",
-        "udp": false
+        "udp": true
       },
       "tag": "socks-in"
     }
@@ -446,11 +485,6 @@ class VpnService extends ChangeNotifier {
             "port": $localPort
           }
         ]
-      },
-      "streamSettings": {
-        "sockopt": {
-          "tcpFastOpen": true
-        }
       },
       "tag": "proxy"
     },
@@ -470,6 +504,11 @@ class VpnService extends ChangeNotifier {
   "routing": {
     "domainStrategy": "IPIfNonMatch",
     "rules": [
+      {
+        "type": "field",
+        "domain": ["$sshServerHost"],
+        "outboundTag": "direct"
+      },
       {
         "type": "field",
         "ip": ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"],
