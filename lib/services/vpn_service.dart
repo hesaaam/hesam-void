@@ -417,11 +417,12 @@ class VpnService extends ChangeNotifier {
   }
 
   /// Build V2Ray JSON config that routes traffic through local SSH SOCKS proxy
+  /// FIXED: Proper SOCKS5 outbound configuration for SSH tunnel
   String _buildSshV2RayConfig(SshConfig sshConfig, int localPort) {
     return '''
 {
   "log": {
-    "loglevel": "warning"
+    "loglevel": "debug"
   },
   "inbounds": [
     {
@@ -429,15 +430,10 @@ class VpnService extends ChangeNotifier {
       "listen": "127.0.0.1",
       "protocol": "socks",
       "settings": {
-        "udp": true
+        "auth": "noauth",
+        "udp": false
       },
       "tag": "socks-in"
-    },
-    {
-      "port": 10809,
-      "listen": "127.0.0.1",
-      "protocol": "http",
-      "tag": "http-in"
     }
   ],
   "outbounds": [
@@ -451,26 +447,38 @@ class VpnService extends ChangeNotifier {
           }
         ]
       },
-      "tag": "ssh-proxy"
+      "streamSettings": {
+        "sockopt": {
+          "tcpFastOpen": true
+        }
+      },
+      "tag": "proxy"
     },
     {
       "protocol": "freedom",
-      "settings": {},
+      "settings": {
+        "domainStrategy": "UseIP"
+      },
       "tag": "direct"
+    },
+    {
+      "protocol": "blackhole",
+      "settings": {},
+      "tag": "block"
     }
   ],
   "routing": {
-    "domainStrategy": "AsIs",
+    "domainStrategy": "IPIfNonMatch",
     "rules": [
       {
         "type": "field",
-        "ip": ["geoip:private"],
+        "ip": ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"],
         "outboundTag": "direct"
       },
       {
         "type": "field",
-        "port": "0-65535",
-        "outboundTag": "ssh-proxy"
+        "network": "tcp,udp",
+        "outboundTag": "proxy"
       }
     ]
   }

@@ -31,7 +31,6 @@ class SshStats {
 
 /// Real SSH Tunnel Service using dartssh2
 /// Creates a local SOCKS5 proxy that forwards all traffic through SSH tunnel
-/// Based on the OFFICIAL dartssh2 forward_local.dart example
 class SshTunnelService extends ChangeNotifier {
   static final SshTunnelService _instance = SshTunnelService._internal();
   factory SshTunnelService() => _instance;
@@ -91,13 +90,11 @@ class SshTunnelService extends ChangeNotifier {
       _totalDownload = 0;
       notifyListeners();
 
-      if (kDebugMode) {
-        debugPrint('═══════════════════════════════════════════════════');
-        debugPrint('[SSH] Connecting to ${config.sshHost}:${config.sshPort}');
-        debugPrint('[SSH] Username: ${config.sshUsername}');
-        debugPrint('[SSH] Password: ${config.sshPassword.isNotEmpty ? "***" : "(empty)"}');
-        debugPrint('═══════════════════════════════════════════════════');
-      }
+      debugPrint('═══════════════════════════════════════════════════');
+      debugPrint('[SSH] Connecting to ${config.sshHost}:${config.sshPort}');
+      debugPrint('[SSH] Username: ${config.sshUsername}');
+      debugPrint('[SSH] Password length: ${config.sshPassword.length}');
+      debugPrint('═══════════════════════════════════════════════════');
 
       // Create SSH socket connection with timeout
       final socket = await SSHSocket.connect(
@@ -106,23 +103,34 @@ class SshTunnelService extends ChangeNotifier {
         timeout: const Duration(seconds: 30),
       );
 
-      if (kDebugMode) {
-        debugPrint('[SSH] Socket connected, authenticating...');
-      }
+      debugPrint('[SSH] ✓ Socket connected!');
 
       // Create SSH client with password authentication
       _client = SSHClient(
         socket,
         username: config.sshUsername,
-        onPasswordRequest: () => config.sshPassword,
+        onPasswordRequest: () {
+          debugPrint('[SSH] Password requested, providing...');
+          return config.sshPassword;
+        },
       );
 
       // Wait for authentication to complete
+      debugPrint('[SSH] Waiting for authentication...');
       await _client!.authenticated;
 
-      if (kDebugMode) {
-        debugPrint('[SSH] ✓ Authentication successful!');
-        debugPrint('[SSH] Remote version: ${_client!.remoteVersion}');
+      debugPrint('[SSH] ✓ Authentication successful!');
+      debugPrint('[SSH] Remote version: ${_client!.remoteVersion}');
+
+      // TEST: Try to open a test channel to verify forwarding works
+      debugPrint('[SSH] Testing port forwarding capability...');
+      try {
+        final testChannel = await _client!.forwardLocal('www.google.com', 80);
+        debugPrint('[SSH] ✓ Test channel opened successfully!');
+        await testChannel.sink.close();
+      } catch (e) {
+        debugPrint('[SSH] ⚠ Test channel failed: $e');
+        debugPrint('[SSH] Server may not allow TCP forwarding');
       }
 
       // Start local SOCKS5 proxy server
@@ -132,10 +140,8 @@ class SshTunnelService extends ChangeNotifier {
       _connectedAt = DateTime.now();
       _startStatsTimer();
       
-      if (kDebugMode) {
-        debugPrint('[SSH] ✓ SOCKS5 proxy started on $proxyAddress');
-        debugPrint('[SSH] ✓ SSH tunnel is ready!');
-      }
+      debugPrint('[SSH] ✓ SOCKS5 proxy started on $proxyAddress');
+      debugPrint('[SSH] ✓ SSH tunnel is ready!');
 
       notifyListeners();
       return true;
@@ -144,9 +150,7 @@ class SshTunnelService extends ChangeNotifier {
       _status = SshStatus.error;
       _errorMessage = _parseError(e);
       
-      if (kDebugMode) {
-        debugPrint('[SSH] ✗ Connection error: $e');
-      }
+      debugPrint('[SSH] ✗ Connection error: $e');
       
       notifyListeners();
       return false;
@@ -164,25 +168,19 @@ class SshTunnelService extends ChangeNotifier {
         );
         _localPort = port;
         
-        if (kDebugMode) {
-          debugPrint('[SOCKS5] Server bound to port $_localPort');
-        }
+        debugPrint('[SOCKS5] Server bound to port $_localPort');
         
         // Listen for incoming connections
         _proxyServer!.listen(
           _handleSocks5Connection,
           onError: (error) {
-            if (kDebugMode) {
-              debugPrint('[SOCKS5] Server error: $error');
-            }
+            debugPrint('[SOCKS5] Server error: $error');
           },
         );
         
         return;
       } catch (e) {
-        if (kDebugMode) {
-          debugPrint('[SOCKS5] Port $port in use, trying next...');
-        }
+        debugPrint('[SOCKS5] Port $port in use, trying next...');
         continue;
       }
     }
@@ -194,44 +192,40 @@ class SshTunnelService extends ChangeNotifier {
     _proxyServer!.listen(
       _handleSocks5Connection,
       onError: (error) {
-        if (kDebugMode) {
-          debugPrint('[SOCKS5] Server error: $error');
-        }
+        debugPrint('[SOCKS5] Server error: $error');
       },
     );
   }
 
-  /// Handle SOCKS5 connection - COMPLETE REWRITE
-  /// Uses StreamController for proper data flow control
+  /// Handle SOCKS5 connection
   void _handleSocks5Connection(Socket clientSocket) async {
     _activeConnectionCount++;
     _clientSockets.add(clientSocket);
     _updateStats();
 
-    if (kDebugMode) {
-      debugPrint('[SOCKS5] New connection #$_activeConnectionCount');
-    }
+    debugPrint('[SOCKS5] ═══ New connection #$_activeConnectionCount ═══');
 
     // Use a completer for the handshake phase
     final handshakeCompleter = Completer<_Socks5Target?>();
     final buffer = <int>[];
-    int handshakeState = 0; // 0: waiting for greeting, 1: waiting for request, 2: done
+    int handshakeState = 0;
     StreamSubscription<Uint8List>? subscription;
 
     subscription = clientSocket.listen(
       (data) {
+        debugPrint('[SOCKS5] Received ${data.length} bytes in state $handshakeState');
         buffer.addAll(data);
         
         if (handshakeState == 0) {
-          // State 0: Parse greeting
           if (buffer.length >= 2) {
             if (buffer[0] != 0x05) {
+              debugPrint('[SOCKS5] Invalid version: ${buffer[0]}');
               handshakeCompleter.complete(null);
               return;
             }
             final numMethods = buffer[1];
             if (buffer.length >= 2 + numMethods) {
-              // Send response: no auth required
+              debugPrint('[SOCKS5] Greeting received, sending no-auth response');
               clientSocket.add([0x05, 0x00]);
               buffer.removeRange(0, 2 + numMethods);
               handshakeState = 1;
@@ -240,10 +234,10 @@ class SshTunnelService extends ChangeNotifier {
         }
         
         if (handshakeState == 1) {
-          // State 1: Parse connection request
           if (buffer.length >= 4) {
+            debugPrint('[SOCKS5] Request header: ${buffer.take(4).toList()}');
             if (buffer[0] != 0x05 || buffer[1] != 0x01) {
-              // Not CONNECT command
+              debugPrint('[SOCKS5] Invalid command: ${buffer[1]}');
               clientSocket.add([0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0]);
               handshakeCompleter.complete(null);
               return;
@@ -255,14 +249,12 @@ class SshTunnelService extends ChangeNotifier {
             int headerLen = 4;
             
             if (addressType == 0x01) {
-              // IPv4
               if (buffer.length >= 10) {
                 targetHost = '${buffer[4]}.${buffer[5]}.${buffer[6]}.${buffer[7]}';
                 targetPort = (buffer[8] << 8) | buffer[9];
                 headerLen = 10;
               }
             } else if (addressType == 0x03) {
-              // Domain
               if (buffer.length >= 5) {
                 final domainLen = buffer[4];
                 if (buffer.length >= 5 + domainLen + 2) {
@@ -272,7 +264,6 @@ class SshTunnelService extends ChangeNotifier {
                 }
               }
             } else if (addressType == 0x04) {
-              // IPv6
               if (buffer.length >= 22) {
                 final ipBytes = buffer.sublist(4, 20);
                 targetHost = _formatIPv6(ipBytes);
@@ -280,12 +271,14 @@ class SshTunnelService extends ChangeNotifier {
                 headerLen = 22;
               }
             } else {
+              debugPrint('[SOCKS5] Unsupported address type: $addressType');
               clientSocket.add([0x05, 0x08, 0x00, 0x01, 0, 0, 0, 0, 0, 0]);
               handshakeCompleter.complete(null);
               return;
             }
             
             if (targetHost != null && targetPort != null) {
+              debugPrint('[SOCKS5] Target parsed: $targetHost:$targetPort');
               buffer.removeRange(0, headerLen);
               handshakeState = 2;
               handshakeCompleter.complete(_Socks5Target(
@@ -298,11 +291,13 @@ class SshTunnelService extends ChangeNotifier {
         }
       },
       onError: (e) {
+        debugPrint('[SOCKS5] Client stream error: $e');
         if (!handshakeCompleter.isCompleted) {
           handshakeCompleter.complete(null);
         }
       },
       onDone: () {
+        debugPrint('[SOCKS5] Client stream done');
         if (!handshakeCompleter.isCompleted) {
           handshakeCompleter.complete(null);
         }
@@ -312,16 +307,17 @@ class SshTunnelService extends ChangeNotifier {
     // Wait for handshake to complete
     final target = await handshakeCompleter.future.timeout(
       const Duration(seconds: 10),
-      onTimeout: () => null,
+      onTimeout: () {
+        debugPrint('[SOCKS5] Handshake timeout!');
+        return null;
+      },
     );
 
     // Cancel the handshake listener
     await subscription.cancel();
 
     if (target == null) {
-      if (kDebugMode) {
-        debugPrint('[SOCKS5] Handshake failed');
-      }
+      debugPrint('[SOCKS5] Handshake failed, closing connection');
       try {
         clientSocket.close();
       } catch (_) {}
@@ -331,18 +327,18 @@ class SshTunnelService extends ChangeNotifier {
       return;
     }
 
-    if (kDebugMode) {
-      debugPrint('[SOCKS5] → Target: ${target.host}:${target.port}');
-    }
+    debugPrint('[SOCKS5] ══════════════════════════════════════');
+    debugPrint('[SOCKS5] → Creating tunnel to ${target.host}:${target.port}');
+    debugPrint('[SOCKS5] ══════════════════════════════════════');
 
     // Create SSH tunnel to target
     SSHForwardChannel? sshChannel;
     try {
+      debugPrint('[SOCKS5] Calling forwardLocal...');
       sshChannel = await _client!.forwardLocal(target.host, target.port);
+      debugPrint('[SOCKS5] ✓ forwardLocal succeeded!');
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('[SOCKS5] ✗ SSH forward failed: $e');
-      }
+      debugPrint('[SOCKS5] ✗ forwardLocal FAILED: $e');
       clientSocket.add([0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0]);
       clientSocket.close();
       _activeConnectionCount--;
@@ -358,22 +354,22 @@ class SshTunnelService extends ChangeNotifier {
       (_localPort >> 8) & 0xFF, _localPort & 0xFF,
     ]);
 
-    if (kDebugMode) {
-      debugPrint('[SOCKS5] ✓ Tunnel established to ${target.host}:${target.port}');
-    }
+    debugPrint('[SOCKS5] ✓ Sent success response to client');
 
     // Send any remaining data from handshake buffer
     if (target.remainingData != null && target.remainingData!.isNotEmpty) {
+      debugPrint('[SOCKS5] Sending ${target.remainingData!.length} bytes of remaining data');
       sshChannel.sink.add(target.remainingData!);
       _totalUpload += target.remainingData!.length;
     }
 
-    // NOW USE PIPE - This is the key to making it work!
-    // Based on official dartssh2 forward_local.dart example
+    // Bidirectional piping
+    debugPrint('[SOCKS5] Starting bidirectional pipe...');
     try {
       // Client → SSH (upload)
       final uploadFuture = clientSocket
           .map((data) {
+            debugPrint('[SOCKS5] Upload: ${data.length} bytes');
             _totalUpload += data.length;
             _updateStats();
             return data;
@@ -384,6 +380,7 @@ class SshTunnelService extends ChangeNotifier {
       // SSH → Client (download)
       final downloadFuture = sshChannel.stream
           .map((data) {
+            debugPrint('[SOCKS5] Download: ${data.length} bytes');
             _totalDownload += data.length;
             _updateStats();
             return data;
@@ -391,13 +388,12 @@ class SshTunnelService extends ChangeNotifier {
           .cast<List<int>>()
           .pipe(clientSocket);
 
-      // Wait for either direction to complete (connection closed)
+      // Wait for either direction to complete
       await Future.any([uploadFuture, downloadFuture]);
 
+      debugPrint('[SOCKS5] Pipe completed');
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('[SOCKS5] Pipe error: $e');
-      }
+      debugPrint('[SOCKS5] Pipe error: $e');
     }
 
     // Clean up
@@ -405,9 +401,7 @@ class SshTunnelService extends ChangeNotifier {
       await clientSocket.close();
     } catch (_) {}
 
-    if (kDebugMode) {
-      debugPrint('[SOCKS5] Connection to ${target.host}:${target.port} closed');
-    }
+    debugPrint('[SOCKS5] Connection to ${target.host}:${target.port} closed');
 
     _activeConnectionCount--;
     _clientSockets.remove(clientSocket);
@@ -430,11 +424,9 @@ class SshTunnelService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Stop stats timer
       _statsTimer?.cancel();
       _statsTimer = null;
 
-      // Close all client sockets
       for (final socket in _clientSockets) {
         try {
           socket.close();
@@ -442,23 +434,17 @@ class SshTunnelService extends ChangeNotifier {
       }
       _clientSockets.clear();
 
-      // Close SOCKS5 proxy server
       await _proxyServer?.close();
       _proxyServer = null;
 
-      // Close SSH client
       _client?.close();
       await _client?.done;
       _client = null;
 
-      if (kDebugMode) {
-        debugPrint('[SSH] Disconnected');
-      }
+      debugPrint('[SSH] Disconnected');
 
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('[SSH] Disconnect error: $e');
-      }
+      debugPrint('[SSH] Disconnect error: $e');
     }
 
     _status = SshStatus.disconnected;
@@ -501,7 +487,6 @@ class SshTunnelService extends ChangeNotifier {
     }
   }
 
-  /// Start statistics update timer
   void _startStatsTimer() {
     _statsTimer?.cancel();
     _statsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -509,7 +494,6 @@ class SshTunnelService extends ChangeNotifier {
     });
   }
 
-  /// Update connection statistics
   void _updateStats() {
     final duration = _connectedAt != null
         ? DateTime.now().difference(_connectedAt!)
@@ -529,7 +513,6 @@ class SshTunnelService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Parse error message for user-friendly display
   String _parseError(dynamic error) {
     final msg = error.toString();
     
@@ -555,7 +538,6 @@ class SshTunnelService extends ChangeNotifier {
     return 'SSH Error: $msg';
   }
 
-  /// Clear error message
   void clearError() {
     _errorMessage = null;
     notifyListeners();
@@ -568,7 +550,6 @@ class SshTunnelService extends ChangeNotifier {
   }
 }
 
-/// SOCKS5 target information
 class _Socks5Target {
   final String host;
   final int port;
