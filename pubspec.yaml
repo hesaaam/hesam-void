@@ -1,7 +1,7 @@
 name: hesam_void
 description: "Hesam Void - Professional VPN Configuration Manager with advanced protocol support for VLESS, VMess, Trojan, Shadowsocks, SSH"
 publish_to: 'none'
-version: 4.0.2+17
+version: 4.1.0+18
 
 environment:
   sdk: ^3.9.0
@@ -22,8 +22,9 @@ dependencies:
   # Networking & HTTP
   http: 1.5.0
   
-  # V2Ray VPN Core - Real tunneling support
-  flutter_v2ray: 1.0.9
+  # Xray VPN Core — vendored so the Android core can be reviewed and updated independently.
+  flutter_v2ray:
+    path: packages/flutter_v2ray_modern
   
   # SSH Tunneling - Real SSH connection support
   dartssh2: ^2.13.0
