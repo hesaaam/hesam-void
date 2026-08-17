@@ -6,7 +6,8 @@ import 'package:hive_flutter/hive_flutter.dart';
 /// Smart Config Optimizer Service with Persistent Settings
 /// Optimizes V2Ray configs for better speed and lower ping
 class ConfigOptimizerService extends ChangeNotifier {
-  static final ConfigOptimizerService _instance = ConfigOptimizerService._internal();
+  static final ConfigOptimizerService _instance =
+      ConfigOptimizerService._internal();
   factory ConfigOptimizerService() => _instance;
   ConfigOptimizerService._internal();
 
@@ -16,11 +17,11 @@ class ConfigOptimizerService extends ChangeNotifier {
 
   // Settings model
   OptimizerSettings _settings = OptimizerSettings();
-  
+
   // Getters and setters for settings
   OptimizerSettings get settings => _settings;
   bool get isInitialized => _isInitialized;
-  
+
   set settings(OptimizerSettings value) {
     _settings = value;
     _saveSettings();
@@ -30,14 +31,16 @@ class ConfigOptimizerService extends ChangeNotifier {
   /// Initialize Hive storage
   Future<void> initialize() async {
     if (_isInitialized) return;
-    
+
     try {
       _settingsBox = await Hive.openBox(_boxName);
       _loadSettings();
       _isInitialized = true;
-      
+
       if (kDebugMode) {
-        debugPrint('[ConfigOptimizer] Initialized with settings: ${_settings.toJson()}');
+        debugPrint(
+          '[ConfigOptimizer] Initialized with settings: ${_settings.toJson()}',
+        );
       }
     } catch (e) {
       if (kDebugMode) {
@@ -49,7 +52,7 @@ class ConfigOptimizerService extends ChangeNotifier {
   /// Load settings from Hive
   void _loadSettings() {
     if (_settingsBox == null) return;
-    
+
     try {
       final data = _settingsBox!.get('settings');
       if (data != null) {
@@ -65,7 +68,7 @@ class ConfigOptimizerService extends ChangeNotifier {
   /// Save settings to Hive
   Future<void> _saveSettings() async {
     if (_settingsBox == null) return;
-    
+
     try {
       await _settingsBox!.put('settings', _settings.toJson());
       if (kDebugMode) {
@@ -107,17 +110,20 @@ class ConfigOptimizerService extends ChangeNotifier {
   ];
 
   /// Optimize a V2Ray JSON configuration
-  String optimizeConfig(String configJson, {OptimizationLevel level = OptimizationLevel.balanced}) {
+  String optimizeConfig(
+    String configJson, {
+    OptimizationLevel level = OptimizationLevel.balanced,
+  }) {
     try {
       Map<String, dynamic> config = jsonDecode(configJson);
-      
+
       // Apply optimizations based on level
       config = _optimizeDNS(config, level);
       config = _optimizeInbound(config, level);
       config = _optimizeOutbound(config, level);
       config = _optimizeRouting(config, level);
       config = _addMux(config, level);
-      
+
       return jsonEncode(config);
     } catch (e) {
       if (kDebugMode) {
@@ -128,9 +134,12 @@ class ConfigOptimizerService extends ChangeNotifier {
   }
 
   /// Optimize DNS settings
-  Map<String, dynamic> _optimizeDNS(Map<String, dynamic> config, OptimizationLevel level) {
+  Map<String, dynamic> _optimizeDNS(
+    Map<String, dynamic> config,
+    OptimizationLevel level,
+  ) {
     List<dynamic> servers = [];
-    
+
     switch (level) {
       case OptimizationLevel.speed:
         // Use fastest DNS
@@ -162,7 +171,10 @@ class ConfigOptimizerService extends ChangeNotifier {
   }
 
   /// Optimize inbound settings
-  Map<String, dynamic> _optimizeInbound(Map<String, dynamic> config, OptimizationLevel level) {
+  Map<String, dynamic> _optimizeInbound(
+    Map<String, dynamic> config,
+    OptimizationLevel level,
+  ) {
     if (config['inbounds'] != null && config['inbounds'] is List) {
       for (var inbound in config['inbounds']) {
         if (inbound is Map) {
@@ -178,12 +190,15 @@ class ConfigOptimizerService extends ChangeNotifier {
   }
 
   /// Optimize outbound settings
-  Map<String, dynamic> _optimizeOutbound(Map<String, dynamic> config, OptimizationLevel level) {
+  Map<String, dynamic> _optimizeOutbound(
+    Map<String, dynamic> config,
+    OptimizationLevel level,
+  ) {
     if (config['outbounds'] != null && config['outbounds'] is List) {
       for (var outbound in config['outbounds']) {
         if (outbound is Map && outbound['streamSettings'] != null) {
           var stream = outbound['streamSettings'] as Map<String, dynamic>;
-          
+
           // TCP optimizations
           if (stream['network'] == 'tcp' || stream['network'] == null) {
             stream['sockopt'] = {
@@ -194,16 +209,16 @@ class ConfigOptimizerService extends ChangeNotifier {
               'domainStrategy': 'UseIPv4',
             };
           }
-          
+
           // WebSocket optimizations
           if (stream['network'] == 'ws') {
             stream['wsSettings'] ??= {};
             stream['wsSettings']['headers'] ??= {};
             // Add browser-like headers
-            stream['wsSettings']['headers']['User-Agent'] = 
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
+            stream['wsSettings']['headers']['User-Agent'] =
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
           }
-          
+
           // gRPC optimizations
           if (stream['network'] == 'grpc') {
             stream['grpcSettings'] ??= {};
@@ -218,7 +233,10 @@ class ConfigOptimizerService extends ChangeNotifier {
   }
 
   /// Optimize routing
-  Map<String, dynamic> _optimizeRouting(Map<String, dynamic> config, OptimizationLevel level) {
+  Map<String, dynamic> _optimizeRouting(
+    Map<String, dynamic> config,
+    OptimizationLevel level,
+  ) {
     config['routing'] = {
       'domainStrategy': 'IPIfNonMatch',
       'domainMatcher': 'hybrid',
@@ -236,32 +254,28 @@ class ConfigOptimizerService extends ChangeNotifier {
           'outboundTag': 'direct',
         },
         // Route DNS queries
-        {
-          'type': 'field',
-          'port': '53',
-          'outboundTag': 'dns-out',
-        },
+        {'type': 'field', 'port': '53', 'outboundTag': 'dns-out'},
         // Default: proxy
-        {
-          'type': 'field',
-          'network': 'tcp,udp',
-          'outboundTag': 'proxy',
-        },
+        {'type': 'field', 'network': 'tcp,udp', 'outboundTag': 'proxy'},
       ],
     };
-    
+
     return config;
   }
 
   /// Add Mux (multiplexing) for better performance
-  Map<String, dynamic> _addMux(Map<String, dynamic> config, OptimizationLevel level) {
-    if (level == OptimizationLevel.speed || level == OptimizationLevel.balanced) {
+  Map<String, dynamic> _addMux(
+    Map<String, dynamic> config,
+    OptimizationLevel level,
+  ) {
+    if (level == OptimizationLevel.speed ||
+        level == OptimizationLevel.balanced) {
       if (config['outbounds'] != null && config['outbounds'] is List) {
         for (var outbound in config['outbounds']) {
-          if (outbound is Map && 
-              (outbound['protocol'] == 'vmess' || 
-               outbound['protocol'] == 'vless' ||
-               outbound['protocol'] == 'trojan')) {
+          if (outbound is Map &&
+              (outbound['protocol'] == 'vmess' ||
+                  outbound['protocol'] == 'vless' ||
+                  outbound['protocol'] == 'trojan')) {
             outbound['mux'] = {
               'enabled': true,
               'concurrency': level == OptimizationLevel.speed ? 16 : 8,
@@ -278,18 +292,21 @@ class ConfigOptimizerService extends ChangeNotifier {
   /// Test DNS server latency
   Future<Map<String, int>> testDNSLatency() async {
     Map<String, int> results = {};
-    
+
     for (var dns in optimizedDNS) {
       try {
         final stopwatch = Stopwatch()..start();
-        await InternetAddress.lookup('google.com', type: InternetAddressType.IPv4);
+        await InternetAddress.lookup(
+          'google.com',
+          type: InternetAddressType.IPv4,
+        );
         stopwatch.stop();
         results[dns['address']] = stopwatch.elapsedMilliseconds;
       } catch (e) {
         results[dns['address']] = -1;
       }
     }
-    
+
     return results;
   }
 
@@ -298,21 +315,21 @@ class ConfigOptimizerService extends ChangeNotifier {
     final latencies = await testDNSLatency();
     String bestDNS = '1.1.1.1';
     int bestLatency = 9999;
-    
+
     latencies.forEach((dns, latency) {
       if (latency > 0 && latency < bestLatency) {
         bestLatency = latency;
         bestDNS = dns;
       }
     });
-    
+
     return bestDNS;
   }
 }
 
 /// Optimization levels
 enum OptimizationLevel {
-  speed,    // Maximum speed, less security
+  speed, // Maximum speed, less security
   balanced, // Balance between speed and security
   security, // Maximum security, may be slower
 }

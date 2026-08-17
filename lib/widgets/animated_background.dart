@@ -6,13 +6,9 @@ import '../utils/app_theme.dart';
 class AnimatedBackground extends StatefulWidget {
   final Widget child;
   final Color? primaryColor;
-  
-  const AnimatedBackground({
-    super.key, 
-    required this.child,
-    this.primaryColor,
-  });
-  
+
+  const AnimatedBackground({super.key, required this.child, this.primaryColor});
+
   @override
   State<AnimatedBackground> createState() => _AnimatedBackgroundState();
 }
@@ -42,15 +38,17 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
 
   void _initColumns(Size size) {
     if (_columns.isNotEmpty) return;
-    
+
     final columnCount = (size.width / 25).floor();
     for (int i = 0; i < columnCount; i++) {
-      _columns.add(MatrixColumn(
-        x: i * 25.0,
-        speed: 1 + _random.nextDouble() * 3,
-        length: 5 + _random.nextInt(15),
-        startY: -_random.nextDouble() * size.height * 2,
-      ));
+      _columns.add(
+        MatrixColumn(
+          x: i * 25.0,
+          speed: 1 + _random.nextDouble() * 3,
+          length: 5 + _random.nextInt(15),
+          startY: -_random.nextDouble() * size.height * 2,
+        ),
+      );
     }
   }
 
@@ -59,12 +57,12 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
     return LayoutBuilder(
       builder: (context, constraints) {
         _initColumns(Size(constraints.maxWidth, constraints.maxHeight));
-        
+
         return Stack(
           children: [
             // Dark background
             Container(color: AppTheme.backgroundDark),
-            
+
             // Matrix rain effect
             AnimatedBuilder(
               animation: _controller,
@@ -79,7 +77,7 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
                 );
               },
             ),
-            
+
             // Gradient overlay
             Container(
               decoration: BoxDecoration(
@@ -94,7 +92,7 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
                 ),
               ),
             ),
-            
+
             // Child content
             widget.child,
           ],
@@ -109,7 +107,7 @@ class MatrixColumn {
   double speed;
   int length;
   double startY;
-  
+
   MatrixColumn({
     required this.x,
     required this.speed,
@@ -124,31 +122,30 @@ class MatrixPainter extends CustomPainter {
   final Color primaryColor;
   static const String chars = '01アイウエオカキクケコサシスセソタチツテト';
   final Random _random = Random();
-  
+
   MatrixPainter({
-    required this.columns, 
+    required this.columns,
     required this.maxHeight,
     required this.primaryColor,
   });
-  
+
   @override
   void paint(Canvas canvas, Size size) {
     for (final column in columns) {
       column.startY += column.speed;
-      
+
       if (column.startY > maxHeight + column.length * 20) {
         column.startY = -column.length * 20.0;
         column.speed = 1 + _random.nextDouble() * 3;
       }
-      
+
       for (int i = 0; i < column.length; i++) {
         final y = column.startY + i * 20;
         if (y < 0 || y > maxHeight) continue;
-        
+
         final opacity = (1 - i / column.length) * 0.15;
-        final paint = Paint()
-          ..color = primaryColor.withValues(alpha: opacity);
-        
+        final paint = Paint()..color = primaryColor.withValues(alpha: opacity);
+
         final textPainter = TextPainter(
           text: TextSpan(
             text: chars[_random.nextInt(chars.length)],
@@ -165,7 +162,7 @@ class MatrixPainter extends CustomPainter {
       }
     }
   }
-  
+
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
@@ -176,7 +173,7 @@ class GlowingContainer extends StatefulWidget {
   final Color glowColor;
   final double borderRadius;
   final bool animate;
-  
+
   const GlowingContainer({
     super.key,
     required this.child,
@@ -184,7 +181,7 @@ class GlowingContainer extends StatefulWidget {
     this.borderRadius = 16,
     this.animate = true,
   });
-  
+
   @override
   State<GlowingContainer> createState() => _GlowingContainerState();
 }
@@ -201,11 +198,12 @@ class _GlowingContainerState extends State<GlowingContainer>
       vsync: this,
       duration: const Duration(seconds: 2),
     );
-    
-    _glowAnimation = Tween<double>(begin: 0.3, end: 0.6).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
-    
+
+    _glowAnimation = Tween<double>(
+      begin: 0.3,
+      end: 0.6,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+
     if (widget.animate) {
       _controller.repeat(reverse: true);
     }
@@ -231,7 +229,9 @@ class _GlowingContainerState extends State<GlowingContainer>
             ),
             boxShadow: [
               BoxShadow(
-                color: widget.glowColor.withValues(alpha: _glowAnimation.value * 0.5),
+                color: widget.glowColor.withValues(
+                  alpha: _glowAnimation.value * 0.5,
+                ),
                 blurRadius: 20,
                 spreadRadius: 0,
               ),
@@ -256,7 +256,7 @@ class PulseAnimation extends StatefulWidget {
   final Duration duration;
   final double minScale;
   final double maxScale;
-  
+
   const PulseAnimation({
     super.key,
     required this.child,
@@ -264,7 +264,7 @@ class PulseAnimation extends StatefulWidget {
     this.minScale = 0.95,
     this.maxScale = 1.05,
   });
-  
+
   @override
   State<PulseAnimation> createState() => _PulseAnimationState();
 }
@@ -293,10 +293,7 @@ class _PulseAnimationState extends State<PulseAnimation>
 
   @override
   Widget build(BuildContext context) {
-    return ScaleTransition(
-      scale: _scaleAnimation,
-      child: widget.child,
-    );
+    return ScaleTransition(scale: _scaleAnimation, child: widget.child);
   }
 }
 
@@ -305,14 +302,14 @@ class TypewriterText extends StatefulWidget {
   final String text;
   final TextStyle? style;
   final Duration charDuration;
-  
+
   const TypewriterText({
     super.key,
     required this.text,
     this.style,
     this.charDuration = const Duration(milliseconds: 50),
   });
-  
+
   @override
   State<TypewriterText> createState() => _TypewriterTextState();
 }
@@ -320,13 +317,13 @@ class TypewriterText extends StatefulWidget {
 class _TypewriterTextState extends State<TypewriterText> {
   String _displayedText = '';
   int _charIndex = 0;
-  
+
   @override
   void initState() {
     super.initState();
     _startTyping();
   }
-  
+
   void _startTyping() async {
     while (_charIndex < widget.text.length) {
       await Future.delayed(widget.charDuration);
@@ -338,7 +335,7 @@ class _TypewriterTextState extends State<TypewriterText> {
       }
     }
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Text(

@@ -10,7 +10,7 @@ class ConnectButton extends StatefulWidget {
   final VoidCallback onTap;
   final String? serverName;
   final Color? primaryColor;
-  
+
   const ConnectButton({
     super.key,
     required this.status,
@@ -18,7 +18,7 @@ class ConnectButton extends StatefulWidget {
     this.serverName,
     this.primaryColor,
   });
-  
+
   @override
   State<ConnectButton> createState() => _ConnectButtonState();
 }
@@ -34,21 +34,21 @@ class _ConnectButtonState extends State<ConnectButton>
   @override
   void initState() {
     super.initState();
-    
+
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     );
-    
+
     _rotationController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
     );
-    
+
     _pulseAnimation = Tween<double>(begin: 1.0, end: 1.15).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
-    
+
     _updateAnimations();
   }
 
@@ -88,20 +88,23 @@ class _ConnectButtonState extends State<ConnectButton>
       children: [
         // Status text
         Text(
-          _getStatusText(),
-          style: TextStyle(
-            color: _getStatusColor(),
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            fontFamily: 'JetBrainsMono',
-            letterSpacing: 2,
-          ),
-        )
+              _getStatusText(),
+              style: TextStyle(
+                color: _getStatusColor(),
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                fontFamily: 'JetBrainsMono',
+                letterSpacing: 2,
+              ),
+            )
             .animate(target: widget.status == VpnStatus.connected ? 1 : 0)
-            .shimmer(duration: 2000.ms, color: _getStatusColor().withValues(alpha: 0.5)),
-        
+            .shimmer(
+              duration: 2000.ms,
+              color: _getStatusColor().withValues(alpha: 0.5),
+            ),
+
         const SizedBox(height: 8),
-        
+
         // Server name
         if (widget.serverName != null)
           Text(
@@ -114,9 +117,9 @@ class _ConnectButtonState extends State<ConnectButton>
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-        
+
         const SizedBox(height: 24),
-        
+
         // Main button
         GestureDetector(
           onTap: widget.status == VpnStatus.connecting ? null : widget.onTap,
@@ -124,15 +127,15 @@ class _ConnectButtonState extends State<ConnectButton>
             animation: Listenable.merge([_pulseAnimation, _rotationController]),
             builder: (context, child) {
               return Transform.scale(
-                scale: widget.status == VpnStatus.connected 
-                    ? _pulseAnimation.value 
+                scale: widget.status == VpnStatus.connected
+                    ? _pulseAnimation.value
                     : 1.0,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
                     // Outer glow rings
                     ..._buildGlowRings(),
-                    
+
                     // Rotating ring (when connecting)
                     if (widget.status == VpnStatus.connecting)
                       Transform.rotate(
@@ -156,7 +159,7 @@ class _ConnectButtonState extends State<ConnectButton>
                           ),
                         ),
                       ),
-                    
+
                     // Main button circle
                     Container(
                       width: 140,
@@ -190,9 +193,9 @@ class _ConnectButtonState extends State<ConnectButton>
             },
           ),
         ),
-        
+
         const SizedBox(height: 24),
-        
+
         // Action text
         Text(
           _getActionText(),
@@ -208,20 +211,20 @@ class _ConnectButtonState extends State<ConnectButton>
 
   List<Widget> _buildGlowRings() {
     if (widget.status != VpnStatus.connected) return [];
-    
+
     return [
       // Ring 1
       Container(
-        width: 180,
-        height: 180,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: _getStatusColor().withValues(alpha: 0.1),
-            width: 2,
-          ),
-        ),
-      )
+            width: 180,
+            height: 180,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: _getStatusColor().withValues(alpha: 0.1),
+                width: 2,
+              ),
+            ),
+          )
           .animate(onPlay: (c) => c.repeat())
           .scale(
             begin: const Offset(1, 1),
@@ -229,19 +232,19 @@ class _ConnectButtonState extends State<ConnectButton>
             duration: 2000.ms,
           )
           .fadeOut(duration: 2000.ms),
-      
+
       // Ring 2
       Container(
-        width: 180,
-        height: 180,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: _getStatusColor().withValues(alpha: 0.1),
-            width: 2,
-          ),
-        ),
-      )
+            width: 180,
+            height: 180,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: _getStatusColor().withValues(alpha: 0.1),
+                width: 2,
+              ),
+            ),
+          )
           .animate(onPlay: (c) => c.repeat())
           .scale(
             begin: const Offset(1, 1),
@@ -316,25 +319,19 @@ class _ConnectButtonState extends State<ConnectButton>
 class ConnectionStats extends StatelessWidget {
   final VpnStats stats;
   final Color? primaryColor;
-  
-  const ConnectionStats({
-    super.key, 
-    required this.stats,
-    this.primaryColor,
-  });
-  
+
+  const ConnectionStats({super.key, required this.stats, this.primaryColor});
+
   @override
   Widget build(BuildContext context) {
     final color = primaryColor ?? AppTheme.primaryGreen;
-    
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: AppTheme.backgroundCard,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: color.withValues(alpha: 0.2),
-        ),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
       ),
       child: Column(
         children: [
@@ -342,11 +339,7 @@ class ConnectionStats extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.timer_outlined,
-                color: color,
-                size: 20,
-              ),
+              Icon(Icons.timer_outlined, color: color, size: 20),
               const SizedBox(width: 8),
               Text(
                 stats.duration,
@@ -359,9 +352,9 @@ class ConnectionStats extends StatelessWidget {
               ),
             ],
           ),
-          
+
           const SizedBox(height: 20),
-          
+
           // Upload / Download
           Row(
             children: [
@@ -392,10 +385,7 @@ class ConnectionStats extends StatelessWidget {
           ),
         ],
       ),
-    )
-        .animate()
-        .fadeIn(duration: 400.ms)
-        .slideY(begin: 0.2, end: 0);
+    ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.2, end: 0);
   }
 
   Widget _buildStatItem({

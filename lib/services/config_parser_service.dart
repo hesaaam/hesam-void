@@ -53,11 +53,11 @@ class ConfigParserService {
   static VpnConfig? _parseSshToVpnConfig(String url) {
     try {
       SshConfig? sshConfig;
-      
+
       if (url.startsWith('npvt-ssh://')) {
         sshConfig = SshConfig.fromNpvtUrl(url, _uuid.v4());
       }
-      
+
       if (sshConfig == null) return null;
 
       // Convert SSH config to VpnConfig format
@@ -71,7 +71,9 @@ class ConfigParserService {
         uuid: sshConfig.sshUsername, // Store username in uuid field
         password: sshConfig.sshPassword,
         transportString: sshConfig.configType.shortName.toLowerCase(),
-        securityString: sshConfig.sni != null && sshConfig.sni!.isNotEmpty ? 'tls' : 'none',
+        securityString: sshConfig.sni != null && sshConfig.sni!.isNotEmpty
+            ? 'tls'
+            : 'none',
         sni: sshConfig.sni,
         host: sshConfig.httpProxy,
         encryption: sshConfig.tlsVersion,
@@ -84,7 +86,7 @@ class ConfigParserService {
   /// Parse multiple configs from text (one per line or separated)
   static List<VpnConfig> parseMultipleConfigs(String text) {
     final configs = <VpnConfig>[];
-    
+
     // Split by newlines and common separators
     final lines = text
         .split(RegExp(r'[\n\r]+'))
@@ -110,7 +112,9 @@ class ConfigParserService {
     final address = uri.host;
     final port = uri.port;
     final params = uri.queryParameters;
-    final name = Uri.decodeComponent(uri.fragment.isNotEmpty ? uri.fragment : 'VLESS Server');
+    final name = Uri.decodeComponent(
+      uri.fragment.isNotEmpty ? uri.fragment : 'VLESS Server',
+    );
 
     return VpnConfig(
       id: _uuid.v4(),
@@ -137,13 +141,13 @@ class ConfigParserService {
   /// Format: vmess://base64encodedJson
   static VpnConfig? _parseVmess(String url) {
     final base64Part = url.substring(8); // Remove 'vmess://'
-    
+
     // Handle both standard and URL-safe base64
     String normalized = base64Part.replaceAll('-', '+').replaceAll('_', '/');
     while (normalized.length % 4 != 0) {
       normalized += '=';
     }
-    
+
     final jsonStr = utf8.decode(base64.decode(normalized));
     final json = jsonDecode(jsonStr) as Map<String, dynamic>;
 
@@ -177,7 +181,9 @@ class ConfigParserService {
     final address = uri.host;
     final port = uri.port;
     final params = uri.queryParameters;
-    final name = Uri.decodeComponent(uri.fragment.isNotEmpty ? uri.fragment : 'Trojan Server');
+    final name = Uri.decodeComponent(
+      uri.fragment.isNotEmpty ? uri.fragment : 'Trojan Server',
+    );
 
     return VpnConfig(
       id: _uuid.v4(),
@@ -201,7 +207,7 @@ class ConfigParserService {
   /// Or: ss://base64(method:password@address:port)#name
   static VpnConfig? _parseShadowsocks(String url) {
     String name = 'Shadowsocks Server';
-    
+
     // Extract name from fragment
     final fragmentIndex = url.indexOf('#');
     if (fragmentIndex != -1) {
@@ -226,7 +232,9 @@ class ConfigParserService {
       // Decode the method:password part
       String decoded;
       try {
-        String normalized = encodedPart.replaceAll('-', '+').replaceAll('_', '/');
+        String normalized = encodedPart
+            .replaceAll('-', '+')
+            .replaceAll('_', '/');
         while (normalized.length % 4 != 0) {
           normalized += '=';
         }
@@ -260,18 +268,18 @@ class ConfigParserService {
         normalized += '=';
       }
       final decoded = utf8.decode(base64.decode(normalized));
-      
+
       // Parse method:password@address:port
       final atIndex = decoded.indexOf('@');
       if (atIndex == -1) return null;
-      
+
       final methodPassword = decoded.substring(0, atIndex);
       final serverPart = decoded.substring(atIndex + 1);
-      
+
       final colonIndex = methodPassword.indexOf(':');
       method = methodPassword.substring(0, colonIndex);
       password = methodPassword.substring(colonIndex + 1);
-      
+
       final serverColonIndex = serverPart.lastIndexOf(':');
       address = serverPart.substring(0, serverColonIndex);
       port = int.tryParse(serverPart.substring(serverColonIndex + 1)) ?? 443;
@@ -320,7 +328,8 @@ class ConfigParserService {
     if (url.startsWith('vmess://')) return VpnProtocol.vmess;
     if (url.startsWith('trojan://')) return VpnProtocol.trojan;
     if (url.startsWith('ss://')) return VpnProtocol.shadowsocks;
-    if (url.startsWith('npvt-ssh://') || url.startsWith('ssh://')) return VpnProtocol.ssh;
+    if (url.startsWith('npvt-ssh://') || url.startsWith('ssh://'))
+      return VpnProtocol.ssh;
     return VpnProtocol.unknown;
   }
 

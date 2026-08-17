@@ -16,11 +16,11 @@ class FragmentService extends ChangeNotifier {
 
   // Settings model
   FragmentServiceSettings _settings = FragmentServiceSettings();
-  
+
   // Getters and setters for settings
   FragmentServiceSettings get settings => _settings;
   bool get isInitialized => _isInitialized;
-  
+
   set settings(FragmentServiceSettings value) {
     _settings = value;
     _saveSettings();
@@ -30,14 +30,16 @@ class FragmentService extends ChangeNotifier {
   /// Initialize Hive storage
   Future<void> initialize() async {
     if (_isInitialized) return;
-    
+
     try {
       _settingsBox = await Hive.openBox(_boxName);
       _loadSettings();
       _isInitialized = true;
-      
+
       if (kDebugMode) {
-        debugPrint('[FragmentService] Initialized with settings: ${_settings.toJson()}');
+        debugPrint(
+          '[FragmentService] Initialized with settings: ${_settings.toJson()}',
+        );
       }
     } catch (e) {
       if (kDebugMode) {
@@ -49,11 +51,13 @@ class FragmentService extends ChangeNotifier {
   /// Load settings from Hive
   void _loadSettings() {
     if (_settingsBox == null) return;
-    
+
     try {
       final data = _settingsBox!.get('settings');
       if (data != null) {
-        _settings = FragmentServiceSettings.fromJson(Map<String, dynamic>.from(data));
+        _settings = FragmentServiceSettings.fromJson(
+          Map<String, dynamic>.from(data),
+        );
       }
     } catch (e) {
       if (kDebugMode) {
@@ -65,7 +69,7 @@ class FragmentService extends ChangeNotifier {
   /// Save settings to Hive
   Future<void> _saveSettings() async {
     if (_settingsBox == null) return;
-    
+
     try {
       await _settingsBox!.put('settings', _settings.toJson());
       if (kDebugMode) {
@@ -100,18 +104,21 @@ class FragmentService extends ChangeNotifier {
   ];
 
   /// Apply fragment settings to config
-  String applyFragment(String configJson, {FragmentMode mode = FragmentMode.auto}) {
+  String applyFragment(
+    String configJson, {
+    FragmentMode mode = FragmentMode.auto,
+  }) {
     try {
       Map<String, dynamic> config = jsonDecode(configJson);
-      
+
       if (config['outbounds'] != null && config['outbounds'] is List) {
         for (var outbound in config['outbounds']) {
           if (outbound is Map && outbound['streamSettings'] != null) {
             var stream = outbound['streamSettings'] as Map<String, dynamic>;
-            
+
             // Apply fragment based on mode
             stream['sockopt'] ??= {};
-            
+
             switch (mode) {
               case FragmentMode.aggressive:
                 stream['sockopt']['dialerProxy'] = 'fragment';
@@ -126,20 +133,21 @@ class FragmentService extends ChangeNotifier {
                 stream['sockopt']['tcpKeepAliveInterval'] = 30;
                 stream['sockopt']['tcpFastOpen'] = true;
             }
-            
+
             // Add TLS settings with fingerprint
-            if (stream['security'] == 'tls' || stream['security'] == 'reality') {
+            if (stream['security'] == 'tls' ||
+                stream['security'] == 'reality') {
               _applyTLSFingerprint(stream);
             }
           }
         }
-        
+
         // Add fragment outbound for aggressive mode
         if (mode == FragmentMode.aggressive) {
           config = _addFragmentOutbound(config);
         }
       }
-      
+
       return jsonEncode(config);
     } catch (e) {
       if (kDebugMode) {
@@ -155,11 +163,11 @@ class FragmentService extends ChangeNotifier {
       stream['tlsSettings']['fingerprint'] = _getRandomFingerprint();
       stream['tlsSettings']['allowInsecure'] = false;
     }
-    
+
     if (stream['realitySettings'] != null) {
       stream['realitySettings']['fingerprint'] = _getRandomFingerprint();
       // Use a working SNI for Iran
-      if (stream['realitySettings']['serverName'] == null || 
+      if (stream['realitySettings']['serverName'] == null ||
           stream['realitySettings']['serverName'].toString().isEmpty) {
         stream['realitySettings']['serverName'] = _getRandomSNI();
       }
@@ -170,10 +178,10 @@ class FragmentService extends ChangeNotifier {
   Map<String, dynamic> _addFragmentOutbound(Map<String, dynamic> config) {
     // Add fragment outbound at the beginning
     List<dynamic> outbounds = config['outbounds'] ?? [];
-    
+
     // Check if fragment outbound already exists
     bool hasFragment = outbounds.any((o) => o['tag'] == 'fragment');
-    
+
     if (!hasFragment) {
       outbounds.insert(0, {
         'tag': 'fragment',
@@ -186,14 +194,11 @@ class FragmentService extends ChangeNotifier {
           },
         },
         'streamSettings': {
-          'sockopt': {
-            'tcpNoDelay': true,
-            'tcpKeepAliveInterval': 15,
-          },
+          'sockopt': {'tcpNoDelay': true, 'tcpKeepAliveInterval': 15},
         },
       });
     }
-    
+
     config['outbounds'] = outbounds;
     return config;
   }
@@ -222,29 +227,33 @@ class FragmentService extends ChangeNotifier {
   String applyNoiseInjection(String configJson, {int noiseLevel = 1}) {
     try {
       Map<String, dynamic> config = jsonDecode(configJson);
-      
+
       if (config['outbounds'] != null && config['outbounds'] is List) {
         for (var outbound in config['outbounds']) {
           if (outbound is Map && outbound['streamSettings'] != null) {
             var stream = outbound['streamSettings'] as Map<String, dynamic>;
-            
+
             // Add padding for WebSocket
             if (stream['network'] == 'ws' && stream['wsSettings'] != null) {
               stream['wsSettings']['headers'] ??= {};
-              stream['wsSettings']['headers']['X-Padding'] = _generatePadding(noiseLevel);
+              stream['wsSettings']['headers']['X-Padding'] = _generatePadding(
+                noiseLevel,
+              );
             }
-            
+
             // Add fake headers for HTTP
             if (stream['network'] == 'http' || stream['network'] == 'h2') {
               stream['httpSettings'] ??= {};
               stream['httpSettings']['headers'] ??= {};
-              stream['httpSettings']['headers']['X-Forwarded-For'] = _generateFakeIP();
-              stream['httpSettings']['headers']['X-Real-IP'] = _generateFakeIP();
+              stream['httpSettings']['headers']['X-Forwarded-For'] =
+                  _generateFakeIP();
+              stream['httpSettings']['headers']['X-Real-IP'] =
+                  _generateFakeIP();
             }
           }
         }
       }
-      
+
       return jsonEncode(config);
     } catch (e) {
       if (kDebugMode) {
@@ -258,8 +267,12 @@ class FragmentService extends ChangeNotifier {
   String _generatePadding(int level) {
     final random = Random();
     int length = level * 100 + random.nextInt(100);
-    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    return List.generate(length, (_) => chars[random.nextInt(chars.length)]).join();
+    const chars =
+        'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    return List.generate(
+      length,
+      (_) => chars[random.nextInt(chars.length)],
+    ).join();
   }
 
   /// Generate fake IP address
@@ -309,8 +322,8 @@ class FragmentService extends ChangeNotifier {
 
 /// Fragment modes
 enum FragmentMode {
-  auto,       // Automatic based on connection
-  moderate,   // Light fragmentation
+  auto, // Automatic based on connection
+  moderate, // Light fragmentation
   aggressive, // Heavy fragmentation for strict DPI
 }
 
@@ -355,7 +368,8 @@ class FragmentServiceSettings {
     return FragmentServiceSettings(
       fragmentEnabled: fragmentEnabled ?? this.fragmentEnabled,
       tlsPaddingEnabled: tlsPaddingEnabled ?? this.tlsPaddingEnabled,
-      sniRandomizationEnabled: sniRandomizationEnabled ?? this.sniRandomizationEnabled,
+      sniRandomizationEnabled:
+          sniRandomizationEnabled ?? this.sniRandomizationEnabled,
       mode: mode ?? this.mode,
       tlsFingerprint: tlsFingerprint ?? this.tlsFingerprint,
     );

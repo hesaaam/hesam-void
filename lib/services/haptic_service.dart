@@ -3,15 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 /// Haptic Feedback Types
-enum HapticType {
-  light,
-  medium,
-  heavy,
-  selection,
-  success,
-  warning,
-  error,
-}
+enum HapticType { light, medium, heavy, selection, success, warning, error }
 
 /// Haptic Feedback Service
 class HapticService {
@@ -33,7 +25,7 @@ class HapticService {
   /// Initialize Haptic Service
   Future<void> initialize() async {
     if (kIsWeb) return; // No haptics on web
-    
+
     _box = await Hive.openBox(_boxName);
     _isEnabled = _box?.get(_enabledKey, defaultValue: true) as bool? ?? true;
     _intensity = _box?.get(_intensityKey, defaultValue: 1.0) as double? ?? 1.0;
@@ -170,7 +162,10 @@ class HapticService {
 /// Extension for easy haptic access in widgets
 extension HapticExtension on HapticService {
   /// Wrap a callback with haptic feedback
-  VoidCallback? withHaptic(VoidCallback? callback, {HapticType type = HapticType.selection}) {
+  VoidCallback? withHaptic(
+    VoidCallback? callback, {
+    HapticType type = HapticType.selection,
+  }) {
     if (callback == null) return null;
     return () {
       trigger(type);
