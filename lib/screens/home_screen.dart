@@ -8,6 +8,8 @@ import '../services/vpn_service.dart';
 import '../services/haptic_service.dart';
 import '../services/auto_reconnect_service.dart';
 import '../services/connection_health_service.dart';
+import '../services/profile_workspace_service.dart';
+import '../services/experience_preferences_service.dart';
 import '../utils/app_theme.dart';
 import '../utils/theme_manager.dart';
 import '../widgets/animated_background.dart';
@@ -15,8 +17,12 @@ import '../widgets/config_card.dart';
 import '../widgets/qr_dialog.dart';
 import '../widgets/connect_button.dart';
 import '../widgets/speed_graph.dart';
-import '../widgets/connection_map.dart';
 import '../widgets/connection_health_card.dart';
+import '../widgets/alive_signal_canvas.dart';
+import '../widgets/quick_connect_sheet.dart';
+import '../widgets/connection_story_sheet.dart';
+import '../widgets/server_studio_card.dart';
+import '../widgets/super_launch_sheet.dart';
 import 'qr_scanner_screen.dart';
 import 'settings_screen.dart';
 
@@ -35,6 +41,9 @@ class _HomeScreenState extends State<HomeScreen>
   final HapticService _hapticService = HapticService();
   final AutoReconnectService _autoReconnectService = AutoReconnectService();
   final ThemeManager _themeManager = ThemeManager();
+  final ProfileWorkspaceService _profileWorkspace = ProfileWorkspaceService();
+  final ExperiencePreferencesService _experiencePreferences =
+      ExperiencePreferencesService();
 
   // Track if showing advanced stats
   bool _showAdvancedStats = false;
@@ -51,16 +60,30 @@ class _HomeScreenState extends State<HomeScreen>
       await _vpnService.initialize();
       await _hapticService.initialize();
       await _themeManager.initialize();
+      await _profileWorkspace.initialize();
+      await _profileWorkspace.reconcile(
+        configProvider.configs.map((config) => config.id),
+      );
+      await _experiencePreferences.initialize();
       await _autoReconnectService.initialize(
         _vpnService,
         onFailover: configProvider.selectConfig,
       );
       if (mounted) setState(() {});
+      if (!_experiencePreferences.hasSeenSuperTour) {
+        Future<void>.delayed(const Duration(milliseconds: 450), () {
+          if (mounted && !_experiencePreferences.hasSeenSuperTour) {
+            _showSuperLaunch();
+          }
+        });
+      }
     });
 
     // Listen to VPN service changes
     _vpnService.addListener(_onVpnStatusChanged);
     _themeManager.addListener(_onThemeChanged);
+    _profileWorkspace.addListener(_onThemeChanged);
+    _experiencePreferences.addListener(_onThemeChanged);
   }
 
   void _onVpnStatusChanged() {
@@ -93,6 +116,8 @@ class _HomeScreenState extends State<HomeScreen>
     _tabController.dispose();
     _vpnService.removeListener(_onVpnStatusChanged);
     _themeManager.removeListener(_onThemeChanged);
+    _profileWorkspace.removeListener(_onThemeChanged);
+    _experiencePreferences.removeListener(_onThemeChanged);
     super.dispose();
   }
 
@@ -177,7 +202,7 @@ class _HomeScreenState extends State<HomeScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'HESAM VOID',
+                        'HESAM VOID 4SUPER',
                         style: TextStyle(
                           color: theme.primaryColor,
                           fontSize: 18,
@@ -187,7 +212,9 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                       ),
                       Text(
-                        _vpnService.isConnected ? 'Protected' : 'Not Protected',
+                        _vpnService.isConnected
+                            ? 'Protected • Alive Signal'
+                            : 'Alive Signal • Ready to protect',
                         style: TextStyle(
                           color: _vpnService.isConnected
                               ? theme.primaryColor
@@ -362,28 +389,34 @@ class _HomeScreenState extends State<HomeScreen>
           ),
           child: Column(
             children: [
-              // Connection Map (when connected)
-              if (_vpnService.isConnected && selectedConfig != null) ...[
-                ConnectionMapWidget(
-                  serverAddress: selectedConfig.address,
-                  isConnected: true,
-                  primaryColor: theme.primaryColor,
-                ),
-                const SizedBox(height: 20),
-              ],
-
-              // Connect Button
-              ConnectButton(
+              AliveSignalCanvas(
                 status: _vpnService.status,
-                serverName:
-                    selectedConfig?.name ?? _vpnService.currentConfig?.name,
-                primaryColor: theme.primaryColor,
-                onTap: () {
+                config: selectedConfig ?? _vpnService.currentConfig,
+                stats: _vpnService.stats,
+                accentColor: theme.primaryColor,
+                surfaceColor: theme.surfaceColor,
+                textColor: theme.textColor,
+                onPrimaryAction: () {
                   _hapticService.onConnect();
+                  if (!_vpnService.isConnected && selectedConfig == null) {
+                    _showQuickConnect(provider, theme);
+                    return;
+                  }
                   _handleConnect(provider);
                 },
+                onChooseRoute: () {
+                  _hapticService.selection();
+                  _showQuickConnect(provider, theme);
+                },
+                onOpenStory: () {
+                  _hapticService.selection();
+                  _showConnectionStory(provider, theme);
+                },
+                reduceMotion: _experiencePreferences.reduceMotion,
+                disableMotion: _experiencePreferences.disableMotion,
               ),
-
+              const SizedBox(height: 16),
+              _buildSuperContextStrip(provider, theme),
               const SizedBox(height: 20),
 
               // Tunnel Active Badge (when connected) - Moved outside stats
@@ -543,6 +576,181 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         );
       },
+    );
+  }
+
+  void _showSuperLaunch() {
+    final theme = _themeManager.currentTheme;
+    SuperLaunchSheet.show(
+      context,
+      accentColor: theme.primaryColor,
+      surfaceColor: theme.surfaceColor,
+      textColor: theme.textColor,
+      onStart: () async {
+        await _experiencePreferences.completeSuperTour();
+        _hapticService.success();
+      },
+    );
+  }
+
+  void _showQuickConnect(ConfigProvider provider, AppThemeData theme) {
+    final health = ConnectionHealthService();
+    final recommended = health.recommend(provider.configs);
+
+    QuickConnectSheet.show(
+      context,
+      configs: provider.configs,
+      selectedConfig: provider.selectedConfig,
+      recommendedConfig: recommended,
+      accentColor: theme.primaryColor,
+      surfaceColor: theme.surfaceColor,
+      textColor: theme.textColor,
+      onSelect: (config) {
+        provider.selectConfig(config);
+        _autoReconnectService.setServerQueue(
+          provider.configs,
+          activeConfigId: config.id,
+        );
+        if (mounted) setState(() {});
+      },
+      onConnect: (config) {
+        provider.selectConfig(config);
+        _autoReconnectService.setServerQueue(
+          provider.configs,
+          activeConfigId: config.id,
+        );
+        _vpnService.connect(config);
+      },
+      onRunChecks: () async {
+        await provider.testAllPings();
+        if (!mounted) return;
+        _showSnackBar(
+          'Local health checks refreshed',
+          icon: Icons.speed_rounded,
+          color: theme.primaryColor,
+          theme: theme,
+        );
+      },
+    );
+  }
+
+  void _showConnectionStory(ConfigProvider provider, AppThemeData theme) {
+    ConnectionStorySheet.show(
+      context,
+      config: provider.selectedConfig ?? _vpnService.currentConfig,
+      status: _vpnService.status,
+      currentError: _vpnService.errorMessage,
+      accentColor: theme.primaryColor,
+      surfaceColor: theme.surfaceColor,
+      textColor: theme.textColor,
+    );
+  }
+
+  Widget _buildSuperContextStrip(ConfigProvider provider, AppThemeData theme) {
+    final focused = provider.selectedConfig ?? _vpnService.currentConfig;
+    final snapshot = focused == null
+        ? null
+        : ConnectionHealthService().snapshotFor(focused.id);
+    final isRecovering =
+        _vpnService.status == VpnStatus.connecting ||
+        _vpnService.status == VpnStatus.disconnecting;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.surfaceColor.withValues(alpha: .7),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.textColor.withValues(alpha: .1)),
+      ),
+      child: Row(
+        children: [
+          _buildSuperMetric(
+            icon: Icons.auto_awesome_rounded,
+            label: 'HEALTH',
+            value: snapshot?.scoreLabel ?? '—',
+            color: snapshot == null
+                ? theme.textColor.withValues(alpha: .55)
+                : theme.primaryColor,
+            theme: theme,
+          ),
+          _buildSuperDivider(theme),
+          _buildSuperMetric(
+            icon: Icons.bolt_rounded,
+            label: 'ROUTE',
+            value: focused?.protocol.shortName ?? 'NONE',
+            color: theme.primaryColor,
+            theme: theme,
+          ),
+          _buildSuperDivider(theme),
+          _buildSuperMetric(
+            icon: Icons.autorenew_rounded,
+            label: 'RECOVER',
+            value: isRecovering
+                ? 'WORKING'
+                : _autoReconnectService.isEnabled
+                ? 'READY'
+                : 'OFF',
+            color: isRecovering
+                ? const Color(0xFFFFB020)
+                : _autoReconnectService.isEnabled
+                ? const Color(0xFF20E870)
+                : theme.textColor.withValues(alpha: .55),
+            theme: theme,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSuperMetric({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+    required AppThemeData theme,
+  }) {
+    return Expanded(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: color, size: 13),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  color: theme.textColor.withValues(alpha: .43),
+                  fontFamily: 'JetBrainsMono',
+                  fontSize: 8,
+                  letterSpacing: .5,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: color,
+              fontFamily: 'JetBrainsMono',
+              fontWeight: FontWeight.bold,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSuperDivider(AppThemeData theme) {
+    return Container(
+      width: 1,
+      height: 31,
+      color: theme.textColor.withValues(alpha: .12),
     );
   }
 
@@ -811,51 +1019,81 @@ class _HomeScreenState extends State<HomeScreen>
                       provider.isTestingPing &&
                       provider.testingConfigId == config.id;
 
-                  return ConfigCard(
-                    config: config,
-                    index: index,
-                    isTesting: isTesting,
-                    isSelected: provider.selectedConfig?.id == config.id,
-                    primaryColor: theme.primaryColor,
-                    surfaceColor: theme.surfaceColor,
-                    textColor: theme.textColor,
-                    onTap: () {
-                      _hapticService.selection();
-                      provider.selectConfig(config);
-                      _showSnackBar('${config.name} selected', theme: theme);
-                    },
-                    onDelete: () async {
-                      _hapticService.warning();
-                      final confirm = await DeleteConfirmDialog.show(
-                        context,
-                        config,
-                      );
-                      if (confirm == true) {
-                        _hapticService.onDelete();
-                        provider.deleteConfig(config.id);
+                  final snapshot = ConnectionHealthService().snapshotFor(
+                    config.id,
+                  );
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 5),
+                    child: ServerStudioCard(
+                      config: config,
+                      snapshot: snapshot,
+                      isTesting: isTesting,
+                      compact: _experiencePreferences.compactStudio,
+                      isSelected: provider.selectedConfig?.id == config.id,
+                      isFavorite: _profileWorkspace.isFavorite(config.id),
+                      accentColor: theme.primaryColor,
+                      surfaceColor: theme.surfaceColor,
+                      textColor: theme.textColor,
+                      onSelect: () {
+                        _hapticService.selection();
+                        provider.selectConfig(config);
+                        _autoReconnectService.setServerQueue(
+                          provider.configs,
+                          activeConfigId: config.id,
+                        );
+                        _showSnackBar('${config.name} selected', theme: theme);
+                      },
+                      onToggleFavorite: () async {
+                        await _profileWorkspace.toggleFavorite(config.id);
+                        if (!mounted) return;
                         _showSnackBar(
-                          'Config deleted',
-                          icon: Icons.delete_outline,
+                          _profileWorkspace.isFavorite(config.id)
+                              ? 'Added to Favorites'
+                              : 'Removed from Favorites',
+                          icon: Icons.star_rounded,
+                          color: const Color(0xFFFFC857),
                           theme: theme,
                         );
-                      }
-                    },
-                    onExportClipboard: () {
-                      _hapticService.success();
-                      _showSnackBar(
-                        'Copied to clipboard',
-                        icon: Icons.check_circle,
-                        theme: theme,
-                      );
-                    },
-                    onExportQR: () {
-                      _hapticService.selection();
-                      QRDisplayDialog.show(context, config);
-                    },
-                    onTestPing: () {
-                      _hapticService.light();
-                      provider.testPing(config.id);
-                    },
+                      },
+                      onDelete: () async {
+                        _hapticService.warning();
+                        final confirm = await DeleteConfirmDialog.show(
+                          context,
+                          config,
+                        );
+                        if (confirm == true) {
+                          _hapticService.onDelete();
+                          await provider.deleteConfig(config.id);
+                          await _profileWorkspace.forget(config.id);
+                          if (!mounted) return;
+                          _showSnackBar(
+                            'Config deleted',
+                            icon: Icons.delete_outline,
+                            theme: theme,
+                          );
+                        }
+                      },
+                      onCopy: () async {
+                        await Clipboard.setData(
+                          ClipboardData(text: config.rawUrl),
+                        );
+                        if (!mounted) return;
+                        _hapticService.success();
+                        _showSnackBar(
+                          'Copied to clipboard',
+                          icon: Icons.check_circle,
+                          theme: theme,
+                        );
+                      },
+                      onShowQr: () {
+                        _hapticService.selection();
+                        QRDisplayDialog.show(context, config);
+                      },
+                      onTest: () {
+                        _hapticService.light();
+                        provider.testPing(config.id);
+                      },
+                    ),
                   );
                 },
               ),
@@ -867,47 +1105,113 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildConfigActionBar(ConfigProvider provider, AppThemeData theme) {
+    final favoriteCount = provider.configs
+        .where((config) => _profileWorkspace.isFavorite(config.id))
+        .length;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
+      margin: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.surfaceColor.withValues(alpha: .72),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: theme.primaryColor.withValues(alpha: .18)),
+      ),
+      child: Column(
         children: [
-          Text(
-            '${provider.configCount} servers',
-            style: TextStyle(
-              color: theme.textColor.withValues(alpha: 0.5),
-              fontSize: 12,
-              fontFamily: 'JetBrainsMono',
-            ),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(9),
+                decoration: BoxDecoration(
+                  color: theme.primaryColor.withValues(alpha: .14),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(
+                  Icons.dashboard_customize_rounded,
+                  color: theme.primaryColor,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'SERVER STUDIO',
+                      style: TextStyle(
+                        color: theme.textColor,
+                        fontFamily: 'JetBrainsMono',
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        letterSpacing: 1.1,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${provider.configCount} routes  •  $favoriteCount favorites  •  local health only',
+                      style: TextStyle(
+                        color: theme.textColor.withValues(alpha: .48),
+                        fontFamily: 'JetBrainsMono',
+                        fontSize: 9.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _buildActionButton(
+                icon: Icons.add_rounded,
+                tooltip: 'Import route',
+                theme: theme,
+                onTap: () {
+                  _hapticService.selection();
+                  _showImportDialog(context);
+                },
+              ),
+            ],
           ),
-          const Spacer(),
-          _buildActionButton(
-            icon: Icons.add_rounded,
-            tooltip: 'Add',
-            theme: theme,
-            onTap: () {
-              _hapticService.selection();
-              _showImportDialog(context);
-            },
-          ),
-          const SizedBox(width: 8),
-          _buildActionButton(
-            icon: Icons.speed_rounded,
-            tooltip: 'Test All',
-            theme: theme,
-            onTap: () {
-              _hapticService.selection();
-              provider.testAllPings();
-            },
-          ),
-          const SizedBox(width: 8),
-          _buildActionButton(
-            icon: Icons.sort_rounded,
-            tooltip: 'Sort',
-            theme: theme,
-            onTap: () {
-              _hapticService.selection();
-              _showSortOptions(context, theme);
-            },
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: provider.isTestingPing
+                      ? null
+                      : () {
+                          _hapticService.selection();
+                          provider.testAllPings();
+                        },
+                  icon: const Icon(Icons.speed_rounded, size: 17),
+                  label: Text(
+                    provider.isTestingPing
+                        ? 'CHECKING ROUTES…'
+                        : 'RUN HEALTH CHECKS',
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: theme.primaryColor,
+                    side: BorderSide(
+                      color: theme.primaryColor.withValues(alpha: .55),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    textStyle: const TextStyle(
+                      fontFamily: 'JetBrainsMono',
+                      fontWeight: FontWeight.bold,
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 9),
+              _buildActionButton(
+                icon: Icons.sort_rounded,
+                tooltip: 'Sort routes',
+                theme: theme,
+                onTap: () {
+                  _hapticService.selection();
+                  _showSortOptions(context, theme);
+                },
+              ),
+            ],
           ),
         ],
       ),
