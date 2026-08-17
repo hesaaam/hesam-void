@@ -10,7 +10,7 @@ import 'home_screen.dart';
 /// Matrix-style animation with loading progress
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
-  
+
   @override
   State<SplashScreen> createState() => _SplashScreenState();
 }
@@ -20,14 +20,14 @@ class _SplashScreenState extends State<SplashScreen>
   late AnimationController _matrixController;
   late AnimationController _logoController;
   late AnimationController _progressController;
-  
+
   final VpnService _vpnService = VpnService();
-  
+
   String _statusText = 'Initializing...';
   double _progress = 0;
   bool _isReady = false;
   String? _coreVersion;
-  
+
   // Matrix rain characters
   final List<MatrixColumn> _matrixColumns = [];
   final _random = Random();
@@ -35,28 +35,28 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void initState() {
     super.initState();
-    
+
     // Hide system UI for immersive experience
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
-    
+
     _matrixController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 100),
     )..repeat();
-    
+
     _logoController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2000),
     );
-    
+
     _progressController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 3000),
     );
-    
+
     // Initialize matrix columns
     _initializeMatrix();
-    
+
     // Start loading sequence
     _startLoadingSequence();
   }
@@ -65,29 +65,32 @@ class _SplashScreenState extends State<SplashScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final screenWidth = MediaQuery.of(context).size.width;
       final columnCount = (screenWidth / 20).floor();
-      
+
       for (int i = 0; i < columnCount; i++) {
-        _matrixColumns.add(MatrixColumn(
-          x: i * 20.0,
-          speed: 2 + _random.nextDouble() * 4,
-          characters: List.generate(
-            10 + _random.nextInt(15),
-            (_) => _getRandomChar(),
+        _matrixColumns.add(
+          MatrixColumn(
+            x: i * 20.0,
+            speed: 2 + _random.nextDouble() * 4,
+            characters: List.generate(
+              10 + _random.nextInt(15),
+              (_) => _getRandomChar(),
+            ),
+            y: -_random.nextDouble() * 500,
           ),
-          y: -_random.nextDouble() * 500,
-        ));
+        );
       }
     });
   }
 
   String _getRandomChar() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#\$%&*ヲァィゥェォカキクケコサシスセソタチツテト';
+    const chars =
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#\$%&*ヲァィゥェォカキクケコサシスセソタチツテト';
     return chars[_random.nextInt(chars.length)];
   }
 
   Future<void> _startLoadingSequence() async {
     await Future.delayed(const Duration(milliseconds: 500));
-    
+
     // Step 1: Logo animation
     _logoController.forward();
     setState(() {
@@ -95,7 +98,7 @@ class _SplashScreenState extends State<SplashScreen>
       _progress = 0.1;
     });
     await Future.delayed(const Duration(milliseconds: 800));
-    
+
     // Step 2: Initialize V2Ray
     setState(() {
       _statusText = 'Initializing V2Ray Core...';
@@ -103,42 +106,42 @@ class _SplashScreenState extends State<SplashScreen>
     });
     await _vpnService.initialize();
     _coreVersion = _vpnService.coreVersion;
-    
+
     await Future.delayed(const Duration(milliseconds: 500));
-    
+
     // Step 3: Check permissions
     setState(() {
       _statusText = 'Checking permissions...';
       _progress = 0.5;
     });
     await Future.delayed(const Duration(milliseconds: 400));
-    
+
     // Step 4: Load configs
     setState(() {
       _statusText = 'Loading configurations...';
       _progress = 0.7;
     });
     await Future.delayed(const Duration(milliseconds: 400));
-    
+
     // Step 5: Testing connection
     setState(() {
       _statusText = 'Testing connection...';
       _progress = 0.85;
     });
     await Future.delayed(const Duration(milliseconds: 400));
-    
+
     // Step 6: Ready
     setState(() {
       _statusText = 'Ready!';
       _progress = 1.0;
       _isReady = true;
     });
-    
+
     // Add haptic feedback
     HapticFeedback.mediumImpact();
-    
+
     await Future.delayed(const Duration(milliseconds: 800));
-    
+
     // Navigate to home
     if (mounted) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -147,10 +150,7 @@ class _SplashScreenState extends State<SplashScreen>
           pageBuilder: (_, __, ___) => const HomeScreen(),
           transitionDuration: const Duration(milliseconds: 800),
           transitionsBuilder: (_, animation, __, child) {
-            return FadeTransition(
-              opacity: animation,
-              child: child,
-            );
+            return FadeTransition(opacity: animation, child: child);
           },
         ),
       );
@@ -184,7 +184,7 @@ class _SplashScreenState extends State<SplashScreen>
               );
             },
           ),
-          
+
           // Gradient overlay
           Container(
             decoration: BoxDecoration(
@@ -199,23 +199,23 @@ class _SplashScreenState extends State<SplashScreen>
               ),
             ),
           ),
-          
+
           // Main content
           SafeArea(
             child: Column(
               children: [
                 const Spacer(flex: 2),
-                
+
                 // Logo
                 _buildLogo(),
-                
+
                 const SizedBox(height: 40),
-                
+
                 // App name with glitch effect
                 _buildAppName(),
-                
+
                 const SizedBox(height: 8),
-                
+
                 // Tagline
                 Text(
                   'SECURE • FAST • PRIVATE',
@@ -225,17 +225,15 @@ class _SplashScreenState extends State<SplashScreen>
                     fontFamily: 'JetBrainsMono',
                     letterSpacing: 4,
                   ),
-                )
-                    .animate()
-                    .fadeIn(delay: 1000.ms, duration: 600.ms),
-                
+                ).animate().fadeIn(delay: 1000.ms, duration: 600.ms),
+
                 const Spacer(flex: 2),
-                
+
                 // Loading section
                 _buildLoadingSection(),
-                
+
                 const SizedBox(height: 40),
-                
+
                 // Version info
                 if (_coreVersion != null)
                   Text(
@@ -245,10 +243,8 @@ class _SplashScreenState extends State<SplashScreen>
                       fontSize: 10,
                       fontFamily: 'JetBrainsMono',
                     ),
-                  )
-                      .animate()
-                      .fadeIn(delay: 2000.ms),
-                
+                  ).animate().fadeIn(delay: 2000.ms),
+
                 const SizedBox(height: 20),
               ],
             ),
@@ -260,41 +256,38 @@ class _SplashScreenState extends State<SplashScreen>
 
   Widget _buildLogo() {
     return AnimatedBuilder(
-      animation: _logoController,
-      builder: (context, child) {
-        return Transform.scale(
-          scale: 0.5 + _logoController.value * 0.5,
-          child: Opacity(
-            opacity: _logoController.value,
-            child: Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: AppTheme.primaryGreen,
-                  width: 3,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppTheme.primaryGreen.withValues(alpha: 0.5),
-                    blurRadius: 30,
-                    spreadRadius: 10,
+          animation: _logoController,
+          builder: (context, child) {
+            return Transform.scale(
+              scale: 0.5 + _logoController.value * 0.5,
+              child: Opacity(
+                opacity: _logoController.value,
+                child: Container(
+                  width: 120,
+                  height: 120,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppTheme.primaryGreen, width: 3),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.primaryGreen.withValues(alpha: 0.5),
+                        blurRadius: 30,
+                        spreadRadius: 10,
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              child: Center(
-                child: Icon(
-                  Icons.shield_rounded,
-                  color: AppTheme.primaryGreen,
-                  size: 60,
+                  child: Center(
+                    child: Icon(
+                      Icons.shield_rounded,
+                      color: AppTheme.primaryGreen,
+                      size: 60,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
-        );
-      },
-    )
+            );
+          },
+        )
         .animate(target: _isReady ? 1 : 0)
         .shimmer(
           duration: 2000.ms,
@@ -304,24 +297,24 @@ class _SplashScreenState extends State<SplashScreen>
 
   Widget _buildAppName() {
     return ShaderMask(
-      shaderCallback: (bounds) => LinearGradient(
-        colors: [
-          AppTheme.primaryGreen,
-          AppTheme.accentCyan,
-          AppTheme.primaryGreen,
-        ],
-      ).createShader(bounds),
-      child: const Text(
-        'HESAM VOID',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 32,
-          fontWeight: FontWeight.bold,
-          fontFamily: 'JetBrainsMono',
-          letterSpacing: 6,
-        ),
-      ),
-    )
+          shaderCallback: (bounds) => LinearGradient(
+            colors: [
+              AppTheme.primaryGreen,
+              AppTheme.accentCyan,
+              AppTheme.primaryGreen,
+            ],
+          ).createShader(bounds),
+          child: const Text(
+            'HESAM VOID',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 32,
+              fontWeight: FontWeight.bold,
+              fontFamily: 'JetBrainsMono',
+              letterSpacing: 6,
+            ),
+          ),
+        )
         .animate()
         .fadeIn(delay: 500.ms, duration: 800.ms)
         .slideY(begin: 0.3, end: 0, curve: Curves.easeOut)
@@ -353,10 +346,7 @@ class _SplashScreenState extends State<SplashScreen>
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(2),
                     gradient: LinearGradient(
-                      colors: [
-                        AppTheme.primaryGreen,
-                        AppTheme.accentCyan,
-                      ],
+                      colors: [AppTheme.primaryGreen, AppTheme.accentCyan],
                     ),
                     boxShadow: [
                       BoxShadow(
@@ -369,9 +359,9 @@ class _SplashScreenState extends State<SplashScreen>
               ],
             ),
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           // Status text
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -402,9 +392,9 @@ class _SplashScreenState extends State<SplashScreen>
               ),
             ],
           ),
-          
+
           const SizedBox(height: 8),
-          
+
           // Progress percentage
           Text(
             '${(_progress * 100).toInt()}%',
@@ -417,9 +407,7 @@ class _SplashScreenState extends State<SplashScreen>
           ),
         ],
       ),
-    )
-        .animate()
-        .fadeIn(delay: 1500.ms, duration: 500.ms);
+    ).animate().fadeIn(delay: 1500.ms, duration: 500.ms);
   }
 }
 
@@ -429,7 +417,7 @@ class MatrixColumn {
   double y;
   double speed;
   List<String> characters;
-  
+
   MatrixColumn({
     required this.x,
     required this.y,
@@ -442,20 +430,17 @@ class MatrixColumn {
 class MatrixRainPainter extends CustomPainter {
   final List<MatrixColumn> columns;
   final Random random;
-  
+
   MatrixRainPainter({required this.columns, required this.random});
-  
+
   @override
   void paint(Canvas canvas, Size size) {
-    final textStyle = TextStyle(
-      fontFamily: 'JetBrainsMono',
-      fontSize: 14,
-    );
+    final textStyle = TextStyle(fontFamily: 'JetBrainsMono', fontSize: 14);
 
     for (var column in columns) {
       // Update position
       column.y += column.speed;
-      
+
       // Reset if off screen
       if (column.y > size.height + column.characters.length * 20) {
         column.y = -column.characters.length * 20.0;
@@ -466,42 +451,42 @@ class MatrixRainPainter extends CustomPainter {
           }
         }
       }
-      
+
       // Draw characters
       for (int i = 0; i < column.characters.length; i++) {
         final charY = column.y + i * 20;
-        
+
         if (charY < 0 || charY > size.height) continue;
-        
+
         // Calculate alpha (fade from top to bottom)
         final alpha = i == column.characters.length - 1
             ? 1.0
             : (i / column.characters.length) * 0.5;
-        
+
         final color = i == column.characters.length - 1
             ? Colors.white
             : AppTheme.primaryGreen.withValues(alpha: alpha);
-        
+
         final textSpan = TextSpan(
           text: column.characters[i],
           style: textStyle.copyWith(color: color),
         );
-        
+
         final textPainter = TextPainter(
           text: textSpan,
           textDirection: TextDirection.ltr,
         )..layout();
-        
+
         textPainter.paint(canvas, Offset(column.x, charY));
       }
     }
   }
-  
+
   String _getRandomChar() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#\$%&*';
     return chars[random.nextInt(chars.length)];
   }
-  
+
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }

@@ -1,27 +1,21 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:flutter/foundation.dart';
+
 import 'package:dartssh2/dartssh2.dart';
+import 'package:flutter/foundation.dart';
+
 import '../models/ssh_config.dart';
 
-/// SSH Connection States
-enum SshStatus {
-  disconnected,
-  connecting,
-  connected,
-  disconnecting,
-  error,
-}
+enum SshStatus { disconnected, connecting, connected, disconnecting, error }
 
-/// SSH Tunnel Statistics
 class SshStats {
   final int uploadBytes;
   final int downloadBytes;
   final String duration;
   final int activeConnections;
 
-  SshStats({
+  const SshStats({
     this.uploadBytes = 0,
     this.downloadBytes = 0,
     this.duration = '00:00:00',
@@ -29,36 +23,33 @@ class SshStats {
   });
 }
 
-/// Real SSH Tunnel Service using dartssh2
-/// Creates a local SOCKS5 proxy that forwards all traffic through SSH tunnel
+/// A device-local SOCKS5 gateway backed by an authenticated SSH connection.
+///
+/// The service has one long-lived SSH session and opens a fresh SSH forwarding
+/// channel for each SOCKS request. It deliberately listens only on loopback.
 class SshTunnelService extends ChangeNotifier {
   static final SshTunnelService _instance = SshTunnelService._internal();
   factory SshTunnelService() => _instance;
   SshTunnelService._internal();
 
-  // SSH Client instance
+  static const _preferredPorts = <int>[1080, 1081, 8080, 8888, 9050, 7890];
+  static const _connectTimeout = Duration(seconds: 25);
+  static const _handshakeTimeout = Duration(seconds: 12);
+
   SSHClient? _client;
-  
-  // Connection state
+  ServerSocket? _proxyServer;
   SshStatus _status = SshStatus.disconnected;
   SshConfig? _currentConfig;
-  SshStats _stats = SshStats();
+  SshStats _stats = const SshStats();
   String? _errorMessage;
-  
-  // Local SOCKS5 proxy server
-  ServerSocket? _proxyServer;
-  int _localPort = 1080;
-  static const List<int> _preferredPorts = [1080, 1081, 8080, 8888, 9050, 7890];
-  
-  // Connection tracking
+  int _localPort = 0;
   int _totalUpload = 0;
   int _totalDownload = 0;
+  int _activeConnectionCount = 0;
   DateTime? _connectedAt;
   Timer? _statsTimer;
-  int _activeConnectionCount = 0;
-  final List<Socket> _clientSockets = [];
+  final Set<Socket> _clientSockets = <Socket>{};
 
-  // Getters
   SshStatus get status => _status;
   SshConfig? get currentConfig => _currentConfig;
   SshStats get stats => _stats;
@@ -68,474 +59,446 @@ class SshTunnelService extends ChangeNotifier {
   int get localPort => _localPort;
   String get proxyAddress => '127.0.0.1:$_localPort';
 
-  /// Connect to SSH server and start SOCKS5 proxy
   Future<bool> connect(SshConfig config, {int localPort = 1080}) async {
     if (kIsWeb) {
-      _errorMessage = 'SSH not supported on web platform';
-      notifyListeners();
-      return false;
+      return _fail('SSH is not supported on the web platform.');
+    }
+    if (config.sshHost.trim().isEmpty ||
+        config.sshPort < 1 ||
+        config.sshPort > 65535) {
+      return _fail('The SSH host or port is invalid.');
+    }
+    if (config.sshUsername.trim().isEmpty) {
+      return _fail('The SSH username is required.');
     }
 
-    // Disconnect existing connection
-    if (_status == SshStatus.connected) {
-      await disconnect();
-    }
+    if (_status != SshStatus.disconnected) await disconnect();
+
+    _status = SshStatus.connecting;
+    _currentConfig = config;
+    _errorMessage = null;
+    _localPort = localPort;
+    _totalUpload = 0;
+    _totalDownload = 0;
+    _activeConnectionCount = 0;
+    notifyListeners();
 
     try {
-      _status = SshStatus.connecting;
-      _currentConfig = config;
-      _localPort = localPort;
-      _errorMessage = null;
-      _totalUpload = 0;
-      _totalDownload = 0;
-      notifyListeners();
-
-      debugPrint('═══════════════════════════════════════════════════');
-      debugPrint('[SSH] Connecting to ${config.sshHost}:${config.sshPort}');
-      debugPrint('[SSH] Username: ${config.sshUsername}');
-      debugPrint('[SSH] Password length: ${config.sshPassword.length}');
-      debugPrint('═══════════════════════════════════════════════════');
-
-      // Create SSH socket connection with timeout
-      final socket = await SSHSocket.connect(
-        config.sshHost,
-        config.sshPort,
-        timeout: const Duration(seconds: 30),
-      );
-
-      debugPrint('[SSH] ✓ Socket connected!');
-
-      // Create SSH client with password authentication
-      _client = SSHClient(
-        socket,
+      final transport = await _openTransport(config);
+      final client = SSHClient(
+        transport,
         username: config.sshUsername,
-        onPasswordRequest: () {
-          debugPrint('[SSH] Password requested, providing...');
-          return config.sshPassword;
-        },
+        onPasswordRequest: () => config.sshPassword,
       );
-
-      // Wait for authentication to complete
-      debugPrint('[SSH] Waiting for authentication...');
-      await _client!.authenticated;
-
-      debugPrint('[SSH] ✓ Authentication successful!');
-      debugPrint('[SSH] Remote version: ${_client!.remoteVersion}');
-
-      // TEST: Try to open a test channel to verify forwarding works
-      debugPrint('[SSH] Testing port forwarding capability...');
-      try {
-        final testChannel = await _client!.forwardLocal('www.google.com', 80);
-        debugPrint('[SSH] ✓ Test channel opened successfully!');
-        await testChannel.sink.close();
-      } catch (e) {
-        debugPrint('[SSH] ⚠ Test channel failed: $e');
-        debugPrint('[SSH] Server may not allow TCP forwarding');
-      }
-
-      // Start local SOCKS5 proxy server
-      await _startSocks5Server();
+      _client = client;
+      await client.authenticated.timeout(_connectTimeout);
+      await _startSocks5Server(requestedPort: localPort);
 
       _status = SshStatus.connected;
       _connectedAt = DateTime.now();
       _startStatsTimer();
-      
-      debugPrint('[SSH] ✓ SOCKS5 proxy started on $proxyAddress');
-      debugPrint('[SSH] ✓ SSH tunnel is ready!');
-
       notifyListeners();
-      return true;
 
-    } catch (e) {
+      unawaited(
+        client.done.then((_) {
+          if (_status == SshStatus.connected) {
+            _status = SshStatus.error;
+            _errorMessage = 'The SSH connection was closed by the server.';
+            unawaited(_closeProxyOnly());
+            notifyListeners();
+          }
+        }),
+      );
+      return true;
+    } catch (error) {
+      await _closeResources();
       _status = SshStatus.error;
-      _errorMessage = _parseError(e);
-      
-      debugPrint('[SSH] ✗ Connection error: $e');
-      
+      _errorMessage = _parseError(error);
       notifyListeners();
       return false;
     }
   }
 
-  /// Start SOCKS5 proxy server - listens for incoming connections
-  Future<void> _startSocks5Server() async {
-    // Try preferred ports first
-    for (final port in _preferredPorts) {
+  Future<bool> _fail(String message) async {
+    _errorMessage = message;
+    _status = SshStatus.error;
+    notifyListeners();
+    return false;
+  }
+
+  Future<SSHSocket> _openTransport(SshConfig config) async {
+    switch (config.configType) {
+      case SshConfigType.direct:
+        return SSHSocket.connect(
+          config.sshHost,
+          config.sshPort,
+          timeout: _connectTimeout,
+        );
+      case SshConfigType.ssl:
+        final socket = await SecureSocket.connect(
+          config.sshHost,
+          config.sshPort,
+          timeout: _connectTimeout,
+        );
+        return _IoSshSocket(socket);
+      case SshConfigType.websocket:
+        final path = _extractWebSocketPath(config.payload);
+        final scheme =
+            (config.sni?.isNotEmpty ?? false) || config.sshPort == 443
+            ? 'wss'
+            : 'ws';
+        final uri = Uri(
+          scheme: scheme,
+          host: config.sshHost,
+          port: config.sshPort,
+          path: path,
+        );
+        final socket = await WebSocket.connect(
+          uri.toString(),
+          headers: config.sni?.isNotEmpty == true
+              ? {'Host': config.sni!}
+              : null,
+          compression: CompressionOptions.compressionOff,
+        ).timeout(_connectTimeout);
+        return _WebSocketSshSocket(socket);
+      case SshConfigType.slowDns:
+        throw UnsupportedError(
+          'SSH over SlowDNS needs a compatible DNS transport and is not available in this release.',
+        );
+    }
+  }
+
+  String _extractWebSocketPath(String? payload) {
+    final value = payload?.trim();
+    if (value == null || value.isEmpty) return '/';
+    if (value.startsWith('/')) return value.split(RegExp(r'\s+')).first;
+    if (value.toUpperCase().startsWith('GET ')) {
+      final parts = value.split(RegExp(r'\s+'));
+      if (parts.length > 1 && parts[1].startsWith('/')) return parts[1];
+    }
+    return '/';
+  }
+
+  Future<void> _startSocks5Server({required int requestedPort}) async {
+    final candidates = <int>{
+      if (requestedPort > 0 && requestedPort <= 65535) requestedPort,
+      ..._preferredPorts,
+      0,
+    };
+
+    Object? lastError;
+    for (final port in candidates) {
       try {
-        _proxyServer = await ServerSocket.bind(
+        final server = await ServerSocket.bind(
           InternetAddress.loopbackIPv4,
           port,
         );
-        _localPort = port;
-        
-        debugPrint('[SOCKS5] Server bound to port $_localPort');
-        
-        // Listen for incoming connections
-        _proxyServer!.listen(
+        _proxyServer = server;
+        _localPort = server.port;
+        server.listen(
           _handleSocks5Connection,
-          onError: (error) {
-            debugPrint('[SOCKS5] Server error: $error');
+          onError: (Object error, StackTrace stackTrace) {
+            if (kDebugMode) debugPrint('[SSH SOCKS] Server error: $error');
           },
         );
-        
         return;
-      } catch (e) {
-        debugPrint('[SOCKS5] Port $port in use, trying next...');
-        continue;
+      } catch (error) {
+        lastError = error;
       }
     }
-    
-    // Fallback: use random port
-    _proxyServer = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-    _localPort = _proxyServer!.port;
-    
-    _proxyServer!.listen(
-      _handleSocks5Connection,
-      onError: (error) {
-        debugPrint('[SOCKS5] Server error: $error');
-      },
-    );
+    throw SocketException('Unable to bind a local SOCKS5 port: $lastError');
   }
 
-  /// Handle SOCKS5 connection
-  void _handleSocks5Connection(Socket clientSocket) async {
-    _activeConnectionCount++;
+  void _handleSocks5Connection(Socket clientSocket) {
     _clientSockets.add(clientSocket);
+    _activeConnectionCount++;
     _updateStats();
 
-    debugPrint('[SOCKS5] ═══ New connection #$_activeConnectionCount ═══');
-
-    // Use a completer for the handshake phase
-    final handshakeCompleter = Completer<_Socks5Target?>();
     final buffer = <int>[];
-    int handshakeState = 0;
-    StreamSubscription<Uint8List>? subscription;
+    var stage =
+        0; // 0: authentication methods, 1: connect request, 2: forwarding
+    var openingTunnel = false;
+    var closed = false;
+    SSHForwardChannel? channel;
+    StreamSubscription<Uint8List>? remoteSubscription;
+    Timer? handshakeTimer;
+    late final StreamSubscription<Uint8List> clientSubscription;
 
-    subscription = clientSocket.listen(
-      (data) {
-        debugPrint('[SOCKS5] Received ${data.length} bytes in state $handshakeState');
-        buffer.addAll(data);
-        
-        if (handshakeState == 0) {
-          if (buffer.length >= 2) {
-            if (buffer[0] != 0x05) {
-              debugPrint('[SOCKS5] Invalid version: ${buffer[0]}');
-              handshakeCompleter.complete(null);
-              return;
-            }
-            final numMethods = buffer[1];
-            if (buffer.length >= 2 + numMethods) {
-              debugPrint('[SOCKS5] Greeting received, sending no-auth response');
-              clientSocket.add([0x05, 0x00]);
-              buffer.removeRange(0, 2 + numMethods);
-              handshakeState = 1;
-            }
-          }
-        }
-        
-        if (handshakeState == 1) {
-          if (buffer.length >= 4) {
-            debugPrint('[SOCKS5] Request header: ${buffer.take(4).toList()}');
-            if (buffer[0] != 0x05 || buffer[1] != 0x01) {
-              debugPrint('[SOCKS5] Invalid command: ${buffer[1]}');
-              clientSocket.add([0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0]);
-              handshakeCompleter.complete(null);
-              return;
-            }
-            
-            final addressType = buffer[3];
-            String? targetHost;
-            int? targetPort;
-            int headerLen = 4;
-            
-            if (addressType == 0x01) {
-              if (buffer.length >= 10) {
-                targetHost = '${buffer[4]}.${buffer[5]}.${buffer[6]}.${buffer[7]}';
-                targetPort = (buffer[8] << 8) | buffer[9];
-                headerLen = 10;
-              }
-            } else if (addressType == 0x03) {
-              if (buffer.length >= 5) {
-                final domainLen = buffer[4];
-                if (buffer.length >= 5 + domainLen + 2) {
-                  targetHost = String.fromCharCodes(buffer.sublist(5, 5 + domainLen));
-                  targetPort = (buffer[5 + domainLen] << 8) | buffer[5 + domainLen + 1];
-                  headerLen = 5 + domainLen + 2;
-                }
-              }
-            } else if (addressType == 0x04) {
-              if (buffer.length >= 22) {
-                final ipBytes = buffer.sublist(4, 20);
-                targetHost = _formatIPv6(ipBytes);
-                targetPort = (buffer[20] << 8) | buffer[21];
-                headerLen = 22;
-              }
-            } else {
-              debugPrint('[SOCKS5] Unsupported address type: $addressType');
-              clientSocket.add([0x05, 0x08, 0x00, 0x01, 0, 0, 0, 0, 0, 0]);
-              handshakeCompleter.complete(null);
-              return;
-            }
-            
-            if (targetHost != null && targetPort != null) {
-              debugPrint('[SOCKS5] Target parsed: $targetHost:$targetPort');
-              buffer.removeRange(0, headerLen);
-              handshakeState = 2;
-              handshakeCompleter.complete(_Socks5Target(
-                host: targetHost,
-                port: targetPort,
-                remainingData: buffer.isNotEmpty ? Uint8List.fromList(buffer) : null,
-              ));
-            }
-          }
-        }
-      },
-      onError: (e) {
-        debugPrint('[SOCKS5] Client stream error: $e');
-        if (!handshakeCompleter.isCompleted) {
-          handshakeCompleter.complete(null);
-        }
-      },
-      onDone: () {
-        debugPrint('[SOCKS5] Client stream done');
-        if (!handshakeCompleter.isCompleted) {
-          handshakeCompleter.complete(null);
-        }
-      },
-    );
-
-    // Wait for handshake to complete
-    final target = await handshakeCompleter.future.timeout(
-      const Duration(seconds: 10),
-      onTimeout: () {
-        debugPrint('[SOCKS5] Handshake timeout!');
-        return null;
-      },
-    );
-
-    // Cancel the handshake listener
-    await subscription.cancel();
-
-    if (target == null) {
-      debugPrint('[SOCKS5] Handshake failed, closing connection');
+    Future<void> closeConnection() async {
+      if (closed) return;
+      closed = true;
+      handshakeTimer?.cancel();
+      await remoteSubscription?.cancel();
       try {
-        clientSocket.close();
+        await channel?.sink.close();
       } catch (_) {}
-      _activeConnectionCount--;
+      try {
+        await clientSocket.close();
+      } catch (_) {}
       _clientSockets.remove(clientSocket);
+      if (_activeConnectionCount > 0) _activeConnectionCount--;
       _updateStats();
-      return;
     }
 
-    debugPrint('[SOCKS5] ══════════════════════════════════════');
-    debugPrint('[SOCKS5] → Creating tunnel to ${target.host}:${target.port}');
-    debugPrint('[SOCKS5] ══════════════════════════════════════');
-
-    // Create SSH tunnel to target
-    SSHForwardChannel? sshChannel;
-    try {
-      debugPrint('[SOCKS5] Calling forwardLocal...');
-      sshChannel = await _client!.forwardLocal(target.host, target.port);
-      debugPrint('[SOCKS5] ✓ forwardLocal succeeded!');
-    } catch (e) {
-      debugPrint('[SOCKS5] ✗ forwardLocal FAILED: $e');
-      clientSocket.add([0x05, 0x05, 0x00, 0x01, 0, 0, 0, 0, 0, 0]);
-      clientSocket.close();
-      _activeConnectionCount--;
-      _clientSockets.remove(clientSocket);
-      _updateStats();
-      return;
-    }
-
-    // Send success response
-    clientSocket.add([
-      0x05, 0x00, 0x00, 0x01,
-      127, 0, 0, 1,
-      (_localPort >> 8) & 0xFF, _localPort & 0xFF,
-    ]);
-
-    debugPrint('[SOCKS5] ✓ Sent success response to client');
-
-    // Send any remaining data from handshake buffer
-    if (target.remainingData != null && target.remainingData!.isNotEmpty) {
-      debugPrint('[SOCKS5] Sending ${target.remainingData!.length} bytes of remaining data');
-      sshChannel.sink.add(target.remainingData!);
-      _totalUpload += target.remainingData!.length;
-    }
-
-    // Bidirectional piping
-    debugPrint('[SOCKS5] Starting bidirectional pipe...');
-    try {
-      // Client → SSH (upload)
-      final uploadFuture = clientSocket
-          .map((data) {
-            debugPrint('[SOCKS5] Upload: ${data.length} bytes');
-            _totalUpload += data.length;
-            _updateStats();
-            return data;
-          })
-          .cast<List<int>>()
-          .pipe(sshChannel.sink);
-
-      // SSH → Client (download)
-      final downloadFuture = sshChannel.stream
-          .map((data) {
-            debugPrint('[SOCKS5] Download: ${data.length} bytes');
+    Future<void> openTunnel(_Socks5Target target) async {
+      try {
+        final activeClient = _client;
+        if (activeClient == null || _status != SshStatus.connected) {
+          throw StateError('SSH tunnel is not connected.');
+        }
+        final openedChannel = await activeClient.forwardLocal(
+          target.host,
+          target.port,
+        );
+        if (closed) {
+          await openedChannel.sink.close();
+          return;
+        }
+        channel = openedChannel;
+        clientSocket.add(_socksReply(0x00));
+        if (target.remainingData.isNotEmpty) {
+          openedChannel.sink.add(target.remainingData);
+          _totalUpload += target.remainingData.length;
+        }
+        remoteSubscription = openedChannel.stream.listen(
+          (data) {
+            if (closed) return;
+            clientSocket.add(data);
             _totalDownload += data.length;
             _updateStats();
-            return data;
-          })
-          .cast<List<int>>()
-          .pipe(clientSocket);
-
-      // Wait for either direction to complete
-      await Future.any([uploadFuture, downloadFuture]);
-
-      debugPrint('[SOCKS5] Pipe completed');
-    } catch (e) {
-      debugPrint('[SOCKS5] Pipe error: $e');
+          },
+          onError: (_, __) => unawaited(closeConnection()),
+          onDone: () => unawaited(closeConnection()),
+          cancelOnError: true,
+        );
+        stage = 2;
+        openingTunnel = false;
+        handshakeTimer?.cancel();
+        clientSubscription.resume();
+        _updateStats();
+      } catch (_) {
+        if (!closed) clientSocket.add(_socksReply(0x05));
+        unawaited(closeConnection());
+      }
     }
 
-    // Clean up
-    try {
-      await clientSocket.close();
-    } catch (_) {}
+    void onClientData(Uint8List data) {
+      if (closed) return;
+      if (stage == 2 && channel != null) {
+        channel!.sink.add(data);
+        _totalUpload += data.length;
+        _updateStats();
+        return;
+      }
+      if (openingTunnel) return;
 
-    debugPrint('[SOCKS5] Connection to ${target.host}:${target.port} closed');
+      buffer.addAll(data);
+      if (stage == 0) {
+        if (buffer.length < 2) return;
+        final methodCount = buffer[1];
+        if (buffer.length < methodCount + 2) return;
+        final methods = buffer.sublist(2, methodCount + 2);
+        buffer.removeRange(0, methodCount + 2);
+        if (!methods.contains(0x00)) {
+          clientSocket.add(<int>[0x05, 0xff]);
+          unawaited(closeConnection());
+          return;
+        }
+        clientSocket.add(<int>[0x05, 0x00]);
+        stage = 1;
+      }
 
-    _activeConnectionCount--;
-    _clientSockets.remove(clientSocket);
-    _updateStats();
-  }
+      if (stage != 1) return;
+      final request = _readSocksRequest(buffer);
+      if (request == null) return;
+      if (request.errorReply != null) {
+        clientSocket.add(_socksReply(request.errorReply!));
+        unawaited(closeConnection());
+        return;
+      }
+      if (request.target == null) return;
 
-  /// Format IPv6 address
-  String _formatIPv6(List<int> bytes) {
-    final parts = <String>[];
-    for (var i = 0; i < 16; i += 2) {
-      final value = (bytes[i] << 8) | bytes[i + 1];
-      parts.add(value.toRadixString(16));
+      openingTunnel = true;
+      clientSubscription.pause();
+      unawaited(openTunnel(request.target!));
     }
-    return parts.join(':');
+
+    clientSubscription = clientSocket.listen(
+      onClientData,
+      onError: (_, __) => unawaited(closeConnection()),
+      onDone: () => unawaited(closeConnection()),
+      cancelOnError: true,
+    );
+    handshakeTimer = Timer(_handshakeTimeout, () {
+      if (stage < 2) unawaited(closeConnection());
+    });
   }
 
-  /// Disconnect SSH connection and stop SOCKS5 server
+  _SocksRequestResult? _readSocksRequest(List<int> buffer) {
+    if (buffer.length < 4) return null;
+    if (buffer[0] != 0x05 || buffer[1] != 0x01) {
+      return const _SocksRequestResult.error(0x07);
+    }
+
+    final addressType = buffer[3];
+    var requiredLength = 0;
+    String? host;
+    var portOffset = 0;
+    if (addressType == 0x01) {
+      requiredLength = 10;
+      if (buffer.length < requiredLength) return null;
+      host = '${buffer[4]}.${buffer[5]}.${buffer[6]}.${buffer[7]}';
+      portOffset = 8;
+    } else if (addressType == 0x03) {
+      if (buffer.length < 5) return null;
+      final domainLength = buffer[4];
+      requiredLength = 7 + domainLength;
+      if (buffer.length < requiredLength) return null;
+      host = String.fromCharCodes(buffer.sublist(5, 5 + domainLength));
+      portOffset = 5 + domainLength;
+    } else if (addressType == 0x04) {
+      requiredLength = 22;
+      if (buffer.length < requiredLength) return null;
+      host = _formatIpv6(buffer.sublist(4, 20));
+      portOffset = 20;
+    } else {
+      return const _SocksRequestResult.error(0x08);
+    }
+
+    final port = (buffer[portOffset] << 8) | buffer[portOffset + 1];
+    final remaining = Uint8List.fromList(buffer.sublist(requiredLength));
+    buffer.clear();
+    return _SocksRequestResult.target(
+      _Socks5Target(host: host, port: port, remainingData: remaining),
+    );
+  }
+
+  List<int> _socksReply(int code) => <int>[
+    0x05,
+    code,
+    0x00,
+    0x01,
+    127,
+    0,
+    0,
+    1,
+    (_localPort >> 8) & 0xff,
+    _localPort & 0xff,
+  ];
+
+  String _formatIpv6(List<int> bytes) {
+    final groups = <String>[];
+    for (var index = 0; index < 16; index += 2) {
+      groups.add(((bytes[index] << 8) | bytes[index + 1]).toRadixString(16));
+    }
+    return groups.join(':');
+  }
+
   Future<void> disconnect() async {
+    if (_status == SshStatus.disconnected) return;
     _status = SshStatus.disconnecting;
     notifyListeners();
-
-    try {
-      _statsTimer?.cancel();
-      _statsTimer = null;
-
-      for (final socket in _clientSockets) {
-        try {
-          socket.close();
-        } catch (_) {}
-      }
-      _clientSockets.clear();
-
-      await _proxyServer?.close();
-      _proxyServer = null;
-
-      _client?.close();
-      await _client?.done;
-      _client = null;
-
-      debugPrint('[SSH] Disconnected');
-
-    } catch (e) {
-      debugPrint('[SSH] Disconnect error: $e');
-    }
-
+    await _closeResources();
     _status = SshStatus.disconnected;
     _currentConfig = null;
+    _errorMessage = null;
     _connectedAt = null;
+    _localPort = 0;
     _totalUpload = 0;
     _totalDownload = 0;
     _activeConnectionCount = 0;
-    _stats = SshStats();
-    
+    _stats = const SshStats();
     notifyListeners();
   }
 
-  /// Test SSH connection (ping)
+  Future<void> _closeProxyOnly() async {
+    _statsTimer?.cancel();
+    _statsTimer = null;
+    for (final socket in _clientSockets.toList()) {
+      try {
+        await socket.close();
+      } catch (_) {}
+    }
+    _clientSockets.clear();
+    await _proxyServer?.close();
+    _proxyServer = null;
+  }
+
+  Future<void> _closeResources() async {
+    await _closeProxyOnly();
+    final client = _client;
+    _client = null;
+    if (client != null) {
+      try {
+        client.close();
+        await client.done.timeout(const Duration(seconds: 3));
+      } catch (_) {}
+    }
+  }
+
   Future<int> testConnection(SshConfig config) async {
     final stopwatch = Stopwatch()..start();
-    
+    SSHClient? client;
     try {
-      final socket = await SSHSocket.connect(
-        config.sshHost,
-        config.sshPort,
-        timeout: const Duration(seconds: 10),
-      );
-
-      final client = SSHClient(
-        socket,
+      final transport = await _openTransport(config);
+      client = SSHClient(
+        transport,
         username: config.sshUsername,
         onPasswordRequest: () => config.sshPassword,
       );
-
-      await client.authenticated;
-      client.close();
-      
+      await client.authenticated.timeout(const Duration(seconds: 12));
       stopwatch.stop();
       return stopwatch.elapsedMilliseconds;
-
-    } catch (e) {
+    } catch (_) {
       stopwatch.stop();
       return -1;
+    } finally {
+      client?.close();
     }
   }
 
   void _startStatsTimer() {
     _statsTimer?.cancel();
-    _statsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      _updateStats();
-    });
+    _statsTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _updateStats(),
+    );
   }
 
   void _updateStats() {
-    final duration = _connectedAt != null
-        ? DateTime.now().difference(_connectedAt!)
-        : Duration.zero;
-
+    final duration = _connectedAt == null
+        ? Duration.zero
+        : DateTime.now().difference(_connectedAt!);
     final hours = duration.inHours.toString().padLeft(2, '0');
     final minutes = (duration.inMinutes % 60).toString().padLeft(2, '0');
     final seconds = (duration.inSeconds % 60).toString().padLeft(2, '0');
-
     _stats = SshStats(
       uploadBytes: _totalUpload,
       downloadBytes: _totalDownload,
       duration: '$hours:$minutes:$seconds',
       activeConnections: _activeConnectionCount,
     );
-    
     notifyListeners();
   }
 
-  String _parseError(dynamic error) {
-    final msg = error.toString();
-    
-    if (msg.contains('Connection refused')) {
-      return 'Connection refused. Server may be offline.';
-    }
-    if (msg.contains('Connection timed out') || msg.contains('timeout')) {
-      return 'Connection timeout. Check your network.';
-    }
-    if (msg.contains('Authentication failed') || msg.contains('not authenticated')) {
-      return 'Authentication failed. Check username/password.';
-    }
-    if (msg.contains('Host key verification failed')) {
-      return 'Host key verification failed.';
-    }
-    if (msg.contains('No route to host')) {
-      return 'No route to host. Check server address.';
-    }
-    if (msg.contains('Network is unreachable')) {
-      return 'Network unreachable. Check your connection.';
-    }
-    
-    return 'SSH Error: $msg';
+  String _parseError(Object error) {
+    final message = error.toString();
+    final normalized = message.toLowerCase();
+    if (error is UnsupportedError) return message;
+    if (normalized.contains('connection refused'))
+      return 'Connection refused. The server may be offline.';
+    if (normalized.contains('timed out') || normalized.contains('timeout'))
+      return 'Connection timeout. Check the server address and your network.';
+    if (normalized.contains('authentication') ||
+        normalized.contains('not authenticated'))
+      return 'Authentication failed. Check the SSH username and password.';
+    if (normalized.contains('certificate') || normalized.contains('handshake'))
+      return 'TLS handshake failed. Verify the SSH TLS host and certificate.';
+    if (normalized.contains('no route') || normalized.contains('unreachable'))
+      return 'Network is unreachable. Check your connection.';
+    if (normalized.contains('websocket'))
+      return 'WebSocket transport failed. Verify its host, path and port.';
+    return 'SSH connection failed: $message';
   }
 
   void clearError() {
@@ -545,7 +508,7 @@ class SshTunnelService extends ChangeNotifier {
 
   @override
   void dispose() {
-    disconnect();
+    unawaited(disconnect());
     super.dispose();
   }
 }
@@ -553,11 +516,82 @@ class SshTunnelService extends ChangeNotifier {
 class _Socks5Target {
   final String host;
   final int port;
-  final Uint8List? remainingData;
+  final Uint8List remainingData;
 
-  _Socks5Target({
+  const _Socks5Target({
     required this.host,
     required this.port,
-    this.remainingData,
+    required this.remainingData,
   });
+}
+
+class _SocksRequestResult {
+  final _Socks5Target? target;
+  final int? errorReply;
+
+  const _SocksRequestResult.target(this.target) : errorReply = null;
+  const _SocksRequestResult.error(this.errorReply) : target = null;
+}
+
+class _IoSshSocket implements SSHSocket {
+  final Socket _socket;
+  _IoSshSocket(this._socket);
+
+  @override
+  Stream<Uint8List> get stream => _socket;
+  @override
+  StreamSink<List<int>> get sink => _socket;
+  @override
+  Future<void> get done => _socket.done;
+  @override
+  Future<void> close() => _socket.close();
+  @override
+  void destroy() => _socket.destroy();
+}
+
+class _WebSocketSshSocket implements SSHSocket {
+  final WebSocket _socket;
+  late final Stream<Uint8List> _stream = _socket
+      .where((data) => data is List<int>)
+      .cast<List<int>>()
+      .map(Uint8List.fromList);
+  late final StreamSink<List<int>> _sink = _WebSocketByteSink(_socket);
+
+  _WebSocketSshSocket(this._socket);
+
+  @override
+  Stream<Uint8List> get stream => _stream;
+  @override
+  StreamSink<List<int>> get sink => _sink;
+  @override
+  Future<void> get done => _socket.done;
+  @override
+  Future<void> close() async {
+    await _socket.close();
+  }
+
+  @override
+  void destroy() => _socket.close();
+}
+
+class _WebSocketByteSink implements StreamSink<List<int>> {
+  final WebSocket _socket;
+  _WebSocketByteSink(this._socket);
+
+  @override
+  void add(List<int> data) => _socket.add(data);
+  @override
+  void addError(Object error, [StackTrace? stackTrace]) =>
+      _socket.addError(error, stackTrace);
+  @override
+  Future<void> addStream(Stream<List<int>> stream) async {
+    await for (final data in stream) {
+      add(data);
+    }
+  }
+
+  @override
+  Future<void> close() => _socket.close();
+  @override
+  Future<void> get done => _socket.done;
 }

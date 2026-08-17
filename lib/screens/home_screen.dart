@@ -7,6 +7,7 @@ import '../providers/config_provider.dart';
 import '../services/vpn_service.dart';
 import '../services/haptic_service.dart';
 import '../services/auto_reconnect_service.dart';
+import '../services/connection_health_service.dart';
 import '../utils/app_theme.dart';
 import '../utils/theme_manager.dart';
 import '../widgets/animated_background.dart';
@@ -15,13 +16,14 @@ import '../widgets/qr_dialog.dart';
 import '../widgets/connect_button.dart';
 import '../widgets/speed_graph.dart';
 import '../widgets/connection_map.dart';
+import '../widgets/connection_health_card.dart';
 import 'qr_scanner_screen.dart';
 import 'settings_screen.dart';
 
 /// Main Home Screen with VPN Connect functionality
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
-  
+
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -33,7 +35,7 @@ class _HomeScreenState extends State<HomeScreen>
   final HapticService _hapticService = HapticService();
   final AutoReconnectService _autoReconnectService = AutoReconnectService();
   final ThemeManager _themeManager = ThemeManager();
-  
+
   // Track if showing advanced stats
   bool _showAdvancedStats = false;
 
@@ -41,14 +43,18 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    
+
     // Initialize providers and services
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      context.read<ConfigProvider>().initialize();
+      final configProvider = context.read<ConfigProvider>();
+      await configProvider.initialize();
       await _vpnService.initialize();
       await _hapticService.initialize();
       await _themeManager.initialize();
-      _autoReconnectService.initialize(_vpnService, context.read<ConfigProvider>());
+      await _autoReconnectService.initialize(
+        _vpnService,
+        onFailover: configProvider.selectConfig,
+      );
       if (mounted) setState(() {});
     });
 
@@ -60,7 +66,7 @@ class _HomeScreenState extends State<HomeScreen>
   void _onVpnStatusChanged() {
     if (mounted) {
       setState(() {});
-      
+
       // Trigger haptic feedback based on status
       switch (_vpnService.status) {
         case VpnStatus.connected:
@@ -93,7 +99,7 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   Widget build(BuildContext context) {
     final theme = _themeManager.currentTheme;
-    
+
     return Scaffold(
       backgroundColor: theme.backgroundColor,
       body: AnimatedBackground(
@@ -103,18 +109,15 @@ class _HomeScreenState extends State<HomeScreen>
             children: [
               // Custom App Bar
               _buildAppBar(theme),
-              
+
               // Tab Bar
               _buildTabBar(theme),
-              
+
               // Tab Content
               Expanded(
                 child: TabBarView(
                   controller: _tabController,
-                  children: [
-                    _buildConnectTab(theme),
-                    _buildConfigsTab(theme),
-                  ],
+                  children: [_buildConnectTab(theme), _buildConfigsTab(theme)],
                 ),
               ),
             ],
@@ -126,162 +129,169 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildAppBar(AppThemeData theme) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      child: Row(
-        children: [
-          // Logo and title
-          Row(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: _vpnService.isConnected
-                      ? theme.primaryColor.withValues(alpha: 0.2)
-                      : theme.primaryColor.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: _vpnService.isConnected
-                        ? theme.primaryColor
-                        : theme.primaryColor.withValues(alpha: 0.3),
-                  ),
-                  boxShadow: _vpnService.isConnected
-                      ? [
-                          BoxShadow(
-                            color: theme.primaryColor.withValues(alpha: 0.4),
-                            blurRadius: 15,
-                            spreadRadius: 2,
-                          ),
-                        ]
-                      : null,
-                ),
-                child: Icon(
-                  Icons.shield_rounded,
-                  color: _vpnService.isConnected
-                      ? theme.primaryColor
-                      : theme.primaryColor.withValues(alpha: 0.7),
-                  size: 24,
-                ),
-              )
-                  .animate(target: _vpnService.isConnected ? 1 : 0)
-                  .shimmer(
-                    duration: 2000.ms,
-                    color: theme.primaryColor.withValues(alpha: 0.5),
-                  ),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              // Logo and title
+              Row(
                 children: [
-                  Text(
-                    'HESAM VOID',
-                    style: TextStyle(
-                      color: theme.primaryColor,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      fontFamily: 'JetBrainsMono',
-                      letterSpacing: 2,
-                    ),
-                  ),
-                  Text(
-                    _vpnService.isConnected ? 'Protected' : 'Not Protected',
-                    style: TextStyle(
-                      color: _vpnService.isConnected
-                          ? theme.primaryColor
-                          : theme.textColor.withValues(alpha: 0.5),
-                      fontSize: 11,
-                      fontFamily: 'JetBrainsMono',
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          
-          const Spacer(),
-          
-          // Settings button
-          IconButton(
-            icon: Icon(Icons.settings, color: theme.primaryColor),
-            onPressed: () {
-              _hapticService.selection();
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              ).then((_) {
-                if (mounted) setState(() {});
-              });
-            },
-          ),
-          
-          const SizedBox(width: 8),
-          
-          // Connection indicator
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: _vpnService.isConnected
-                  ? theme.primaryColor.withValues(alpha: 0.15)
-                  : theme.surfaceColor,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: _vpnService.isConnected
-                    ? theme.primaryColor
-                    : theme.textColor.withValues(alpha: 0.3),
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: _vpnService.isConnected
-                        ? theme.primaryColor
-                        : Colors.red,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: (_vpnService.isConnected
+                  Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: _vpnService.isConnected
+                              ? theme.primaryColor.withValues(alpha: 0.2)
+                              : theme.primaryColor.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _vpnService.isConnected
                                 ? theme.primaryColor
-                                : Colors.red)
-                            .withValues(alpha: 0.5),
-                        blurRadius: 8,
+                                : theme.primaryColor.withValues(alpha: 0.3),
+                          ),
+                          boxShadow: _vpnService.isConnected
+                              ? [
+                                  BoxShadow(
+                                    color: theme.primaryColor.withValues(
+                                      alpha: 0.4,
+                                    ),
+                                    blurRadius: 15,
+                                    spreadRadius: 2,
+                                  ),
+                                ]
+                              : null,
+                        ),
+                        child: Icon(
+                          Icons.shield_rounded,
+                          color: _vpnService.isConnected
+                              ? theme.primaryColor
+                              : theme.primaryColor.withValues(alpha: 0.7),
+                          size: 24,
+                        ),
+                      )
+                      .animate(target: _vpnService.isConnected ? 1 : 0)
+                      .shimmer(
+                        duration: 2000.ms,
+                        color: theme.primaryColor.withValues(alpha: 0.5),
+                      ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'HESAM VOID',
+                        style: TextStyle(
+                          color: theme.primaryColor,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          fontFamily: 'JetBrainsMono',
+                          letterSpacing: 2,
+                        ),
+                      ),
+                      Text(
+                        _vpnService.isConnected ? 'Protected' : 'Not Protected',
+                        style: TextStyle(
+                          color: _vpnService.isConnected
+                              ? theme.primaryColor
+                              : theme.textColor.withValues(alpha: 0.5),
+                          fontSize: 11,
+                          fontFamily: 'JetBrainsMono',
+                        ),
                       ),
                     ],
                   ),
-                )
-                    .animate(
-                      onPlay: (c) => _vpnService.isConnected ? c.repeat() : c.stop(),
-                    )
-                    .scale(
-                      begin: const Offset(1, 1),
-                      end: const Offset(1.3, 1.3),
-                      duration: 1000.ms,
-                    )
-                    .then()
-                    .scale(
-                      begin: const Offset(1.3, 1.3),
-                      end: const Offset(1, 1),
-                      duration: 1000.ms,
-                    ),
-                const SizedBox(width: 8),
-                Text(
-                  _vpnService.isConnected ? 'ON' : 'OFF',
-                  style: TextStyle(
+                ],
+              ),
+
+              const Spacer(),
+
+              // Settings button
+              IconButton(
+                icon: Icon(Icons.settings, color: theme.primaryColor),
+                onPressed: () {
+                  _hapticService.selection();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  ).then((_) {
+                    if (mounted) setState(() {});
+                  });
+                },
+              ),
+
+              const SizedBox(width: 8),
+
+              // Connection indicator
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: _vpnService.isConnected
+                      ? theme.primaryColor.withValues(alpha: 0.15)
+                      : theme.surfaceColor,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
                     color: _vpnService.isConnected
                         ? theme.primaryColor
-                        : theme.textColor.withValues(alpha: 0.5),
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    fontFamily: 'JetBrainsMono',
+                        : theme.textColor.withValues(alpha: 0.3),
                   ),
                 ),
-              ],
-            ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: _vpnService.isConnected
+                                ? theme.primaryColor
+                                : Colors.red,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color:
+                                    (_vpnService.isConnected
+                                            ? theme.primaryColor
+                                            : Colors.red)
+                                        .withValues(alpha: 0.5),
+                                blurRadius: 8,
+                              ),
+                            ],
+                          ),
+                        )
+                        .animate(
+                          onPlay: (c) =>
+                              _vpnService.isConnected ? c.repeat() : c.stop(),
+                        )
+                        .scale(
+                          begin: const Offset(1, 1),
+                          end: const Offset(1.3, 1.3),
+                          duration: 1000.ms,
+                        )
+                        .then()
+                        .scale(
+                          begin: const Offset(1.3, 1.3),
+                          end: const Offset(1, 1),
+                          duration: 1000.ms,
+                        ),
+                    const SizedBox(width: 8),
+                    Text(
+                      _vpnService.isConnected ? 'ON' : 'OFF',
+                      style: TextStyle(
+                        color: _vpnService.isConnected
+                            ? theme.primaryColor
+                            : theme.textColor.withValues(alpha: 0.5),
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        fontFamily: 'JetBrainsMono',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
-    )
+        )
         .animate()
         .fadeIn(duration: 500.ms)
         .slideY(begin: -0.3, end: 0, duration: 500.ms);
@@ -342,9 +352,14 @@ class _HomeScreenState extends State<HomeScreen>
     return Consumer<ConfigProvider>(
       builder: (context, provider, _) {
         final selectedConfig = provider.selectedConfig;
-        
+
         return SingleChildScrollView(
-          padding: const EdgeInsets.only(left: 20, right: 20, top: 20, bottom: 100),
+          padding: const EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 20,
+            bottom: 100,
+          ),
           child: Column(
             children: [
               // Connection Map (when connected)
@@ -356,26 +371,27 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
                 const SizedBox(height: 20),
               ],
-              
+
               // Connect Button
               ConnectButton(
                 status: _vpnService.status,
-                serverName: selectedConfig?.name ?? _vpnService.currentConfig?.name,
+                serverName:
+                    selectedConfig?.name ?? _vpnService.currentConfig?.name,
                 primaryColor: theme.primaryColor,
                 onTap: () {
                   _hapticService.onConnect();
                   _handleConnect(provider);
                 },
               ),
-              
+
               const SizedBox(height: 20),
-              
+
               // Tunnel Active Badge (when connected) - Moved outside stats
-              if (_vpnService.isConnected) ...[                
+              if (_vpnService.isConnected) ...[
                 const SizedBox(height: 16),
                 _buildTunnelActiveBadge(theme),
               ],
-              
+
               // Connection Stats (when connected)
               if (_vpnService.isConnected) ...[
                 // Toggle advanced stats
@@ -385,17 +401,24 @@ class _HomeScreenState extends State<HomeScreen>
                     setState(() => _showAdvancedStats = !_showAdvancedStats);
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
                       color: theme.surfaceColor,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: theme.primaryColor.withValues(alpha: 0.3)),
+                      border: Border.all(
+                        color: theme.primaryColor.withValues(alpha: 0.3),
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          _showAdvancedStats ? Icons.bar_chart : Icons.show_chart,
+                          _showAdvancedStats
+                              ? Icons.bar_chart
+                              : Icons.show_chart,
                           color: theme.primaryColor,
                           size: 18,
                         ),
@@ -414,7 +437,7 @@ class _HomeScreenState extends State<HomeScreen>
                   ),
                 ),
                 const SizedBox(height: 16),
-                
+
                 if (_showAdvancedStats)
                   // Speed Graph - with better height control
                   Container(
@@ -432,27 +455,45 @@ class _HomeScreenState extends State<HomeScreen>
                     primaryColor: theme.primaryColor,
                   ),
               ],
-              
+
+              // Connection Navigator is local-only and explains the current
+              // profile health before the user starts a tunnel.
+              if (!_vpnService.isConnected &&
+                  !_vpnService.isConnecting &&
+                  provider.hasConfigs) ...[
+                const SizedBox(height: 20),
+                _buildConnectionNavigator(provider, theme),
+              ],
+
               // Server Selection (when disconnected)
               if (!_vpnService.isConnected && !_vpnService.isConnecting) ...[
-                const SizedBox(height: 10),
+                const SizedBox(height: 16),
                 _buildServerSelector(provider, theme),
               ],
-              
+
               // Auto-reconnect indicator
               if (_autoReconnectService.isEnabled && !_vpnService.isConnected)
                 Container(
                   margin: const EdgeInsets.only(top: 16),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: theme.primaryColor.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: theme.primaryColor.withValues(alpha: 0.3)),
+                    border: Border.all(
+                      color: theme.primaryColor.withValues(alpha: 0.3),
+                    ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.autorenew, color: theme.primaryColor, size: 16),
+                      Icon(
+                        Icons.autorenew,
+                        color: theme.primaryColor,
+                        size: 16,
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         'Auto-reconnect enabled',
@@ -465,39 +506,81 @@ class _HomeScreenState extends State<HomeScreen>
                     ],
                   ),
                 ),
-              
+
               // Error message
               if (_vpnService.errorMessage != null)
                 Container(
-                  margin: const EdgeInsets.only(top: 20),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.error_outline, color: Colors.red),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          _vpnService.errorMessage!,
-                          style: const TextStyle(
-                            color: Colors.red,
-                            fontSize: 12,
-                            fontFamily: 'JetBrainsMono',
-                          ),
+                      margin: const EdgeInsets.only(top: 20),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.red.withValues(alpha: 0.3),
                         ),
                       ),
-                    ],
-                  ),
-                )
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline, color: Colors.red),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              _vpnService.errorMessage!,
+                              style: const TextStyle(
+                                color: Colors.red,
+                                fontSize: 12,
+                                fontFamily: 'JetBrainsMono',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
                     .animate()
                     .fadeIn(duration: 300.ms)
                     .shake(duration: 500.ms, hz: 2),
             ],
           ),
+        );
+      },
+    );
+  }
+
+  Widget _buildConnectionNavigator(
+    ConfigProvider provider,
+    AppThemeData theme,
+  ) {
+    final health = ConnectionHealthService();
+    return AnimatedBuilder(
+      animation: health,
+      builder: (context, child) {
+        final recommended = health.recommend(provider.configs);
+        final focused =
+            provider.selectedConfig ?? recommended ?? provider.configs.first;
+        final snapshot = health.snapshotFor(focused.id);
+        final canChooseRecommendation =
+            recommended != null &&
+            recommended.id != provider.selectedConfig?.id;
+
+        return ConnectionHealthCard(
+          profileName: focused.name,
+          snapshot: snapshot,
+          isRecommended: recommended?.id == focused.id,
+          onChooseRecommended: canChooseRecommendation
+              ? () {
+                  provider.selectConfig(recommended);
+                  _autoReconnectService.setServerQueue(
+                    provider.configs,
+                    activeConfigId: recommended.id,
+                  );
+                  _showSnackBar(
+                    'Recommended profile selected: ${recommended.name}',
+                    icon: Icons.auto_awesome_rounded,
+                    color: theme.primaryColor,
+                    theme: theme,
+                  );
+                }
+              : null,
         );
       },
     );
@@ -558,7 +641,7 @@ class _HomeScreenState extends State<HomeScreen>
     }
 
     final selectedConfig = provider.selectedConfig;
-    
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -575,11 +658,7 @@ class _HomeScreenState extends State<HomeScreen>
         children: [
           Row(
             children: [
-              Icon(
-                Icons.dns_rounded,
-                color: theme.primaryColor,
-                size: 20,
-              ),
+              Icon(Icons.dns_rounded, color: theme.primaryColor, size: 20),
               const SizedBox(width: 8),
               Text(
                 'Selected Server',
@@ -612,16 +691,22 @@ class _HomeScreenState extends State<HomeScreen>
               children: [
                 // Protocol badge
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
-                    color: AppTheme.getProtocolColor(selectedConfig.protocolString)
-                        .withValues(alpha: 0.15),
+                    color: AppTheme.getProtocolColor(
+                      selectedConfig.protocolString,
+                    ).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
                     selectedConfig.protocol.shortName,
                     style: TextStyle(
-                      color: AppTheme.getProtocolColor(selectedConfig.protocolString),
+                      color: AppTheme.getProtocolColor(
+                        selectedConfig.protocolString,
+                      ),
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
                       fontFamily: 'JetBrainsMono',
@@ -659,10 +744,14 @@ class _HomeScreenState extends State<HomeScreen>
                 // Ping
                 if (selectedConfig.ping != null)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
-                      color: AppTheme.getPingColor(selectedConfig.ping)
-                          .withValues(alpha: 0.15),
+                      color: AppTheme.getPingColor(
+                        selectedConfig.ping,
+                      ).withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
@@ -697,7 +786,7 @@ class _HomeScreenState extends State<HomeScreen>
         if (provider.isLoading) {
           return _buildLoadingState(theme);
         }
-        
+
         if (!provider.hasConfigs) {
           return EmptyConfigsWidget(
             onAddConfig: () => _showImportDialog(context),
@@ -705,12 +794,12 @@ class _HomeScreenState extends State<HomeScreen>
             textColor: theme.textColor,
           );
         }
-        
+
         return Column(
           children: [
             // Action bar
             _buildConfigActionBar(provider, theme),
-            
+
             // Config list
             Expanded(
               child: ListView.builder(
@@ -718,9 +807,10 @@ class _HomeScreenState extends State<HomeScreen>
                 itemCount: provider.configs.length,
                 itemBuilder: (context, index) {
                   final config = provider.configs[index];
-                  final isTesting = provider.isTestingPing && 
+                  final isTesting =
+                      provider.isTestingPing &&
                       provider.testingConfigId == config.id;
-                  
+
                   return ConfigCard(
                     config: config,
                     index: index,
@@ -736,16 +826,27 @@ class _HomeScreenState extends State<HomeScreen>
                     },
                     onDelete: () async {
                       _hapticService.warning();
-                      final confirm = await DeleteConfirmDialog.show(context, config);
+                      final confirm = await DeleteConfirmDialog.show(
+                        context,
+                        config,
+                      );
                       if (confirm == true) {
                         _hapticService.onDelete();
                         provider.deleteConfig(config.id);
-                        _showSnackBar('Config deleted', icon: Icons.delete_outline, theme: theme);
+                        _showSnackBar(
+                          'Config deleted',
+                          icon: Icons.delete_outline,
+                          theme: theme,
+                        );
                       }
                     },
                     onExportClipboard: () {
                       _hapticService.success();
-                      _showSnackBar('Copied to clipboard', icon: Icons.check_circle, theme: theme);
+                      _showSnackBar(
+                        'Copied to clipboard',
+                        icon: Icons.check_circle,
+                        theme: theme,
+                      );
                     },
                     onExportQR: () {
                       _hapticService.selection();
@@ -829,7 +930,9 @@ class _HomeScreenState extends State<HomeScreen>
           decoration: BoxDecoration(
             color: theme.surfaceColor,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: theme.primaryColor.withValues(alpha: 0.2)),
+            border: Border.all(
+              color: theme.primaryColor.withValues(alpha: 0.2),
+            ),
           ),
           child: Icon(icon, color: theme.primaryColor, size: 20),
         ),
@@ -865,18 +968,24 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _handleConnect(ConfigProvider provider) {
-    final config = provider.selectedConfig ?? 
+    final config =
+        provider.selectedConfig ??
         (_vpnService.isConnected ? _vpnService.currentConfig : null);
-    
+
     if (_vpnService.isConnected) {
+      _autoReconnectService.notifyUserDisconnecting();
       _vpnService.disconnect();
       return;
     }
-    
+
     if (config == null) {
       if (provider.hasConfigs) {
         // Auto-select first config if none selected
         provider.selectConfig(provider.configs.first);
+        _autoReconnectService.setServerQueue(
+          provider.configs,
+          activeConfigId: provider.configs.first.id,
+        );
         _vpnService.connect(provider.configs.first);
       } else {
         final theme = _themeManager.currentTheme;
@@ -890,7 +999,11 @@ class _HomeScreenState extends State<HomeScreen>
       }
       return;
     }
-    
+
+    _autoReconnectService.setServerQueue(
+      provider.configs,
+      activeConfigId: config.id,
+    );
     _vpnService.connect(config);
   }
 
@@ -906,23 +1019,27 @@ class _HomeScreenState extends State<HomeScreen>
   Future<void> _importFromClipboard(BuildContext context) async {
     final provider = context.read<ConfigProvider>();
     final theme = _themeManager.currentTheme;
-    
+
     try {
       final data = await Clipboard.getData(Clipboard.kTextPlain);
       if (data?.text == null || data!.text!.isEmpty) {
-        _showSnackBar('Clipboard is empty', icon: Icons.warning_amber_rounded, theme: theme);
+        _showSnackBar(
+          'Clipboard is empty',
+          icon: Icons.warning_amber_rounded,
+          theme: theme,
+        );
         return;
       }
-      
+
       final result = await provider.importFromClipboard(data.text!);
-      
+
       _showSnackBar(
         result.message,
         icon: result.success ? Icons.check_circle : Icons.error_outline,
         color: result.success ? theme.primaryColor : Colors.red,
         theme: theme,
       );
-      
+
       if (result.success) {
         _hapticService.success();
       } else {
@@ -930,7 +1047,11 @@ class _HomeScreenState extends State<HomeScreen>
       }
     } catch (e) {
       _hapticService.error();
-      _showSnackBar('Failed to import: $e', icon: Icons.error_outline, theme: theme);
+      _showSnackBar(
+        'Failed to import: $e',
+        icon: Icons.error_outline,
+        theme: theme,
+      );
     }
   }
 
@@ -939,19 +1060,19 @@ class _HomeScreenState extends State<HomeScreen>
       context,
       MaterialPageRoute(builder: (_) => const QRScannerScreen()),
     );
-    
+
     if (result != null && mounted) {
       final provider = context.read<ConfigProvider>();
       final theme = _themeManager.currentTheme;
       final importResult = await provider.importFromClipboard(result);
-      
+
       _showSnackBar(
         importResult.message,
         icon: importResult.success ? Icons.check_circle : Icons.error_outline,
         color: importResult.success ? theme.primaryColor : Colors.red,
         theme: theme,
       );
-      
+
       if (importResult.success) {
         _hapticService.success();
       } else {
@@ -1056,10 +1177,7 @@ class _HomeScreenState extends State<HomeScreen>
       ),
       title: Text(
         title,
-        style: TextStyle(
-          color: theme.textColor,
-          fontFamily: 'JetBrainsMono',
-        ),
+        style: TextStyle(color: theme.textColor, fontFamily: 'JetBrainsMono'),
       ),
       onTap: onTap,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1114,7 +1232,7 @@ class _HomeScreenState extends State<HomeScreen>
     required AppThemeData theme,
   }) {
     final snackColor = color ?? theme.primaryColor;
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(

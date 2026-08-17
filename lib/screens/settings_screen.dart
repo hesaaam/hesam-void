@@ -13,7 +13,8 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProviderStateMixin {
+class _SettingsScreenState extends State<SettingsScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final _themeManager = ThemeManager();
   final _hapticService = HapticService();
@@ -57,7 +58,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
   @override
   Widget build(BuildContext context) {
     final theme = _themeManager.currentTheme;
-    
+
     return Scaffold(
       backgroundColor: theme.backgroundColor,
       appBar: AppBar(
@@ -127,7 +128,9 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
             ),
           )
         else
-          ..._themeManager.customThemes.map((t) => _buildThemeCard(t, theme, isCustom: true)),
+          ..._themeManager.customThemes.map(
+            (t) => _buildThemeCard(t, theme, isCustom: true),
+          ),
         const SizedBox(height: 16),
         ElevatedButton.icon(
           onPressed: () => _showCreateThemeDialog(theme),
@@ -145,9 +148,13 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     );
   }
 
-  Widget _buildThemeCard(AppThemeData t, AppThemeData currentTheme, {bool isCustom = false}) {
+  Widget _buildThemeCard(
+    AppThemeData t,
+    AppThemeData currentTheme, {
+    bool isCustom = false,
+  }) {
     final isSelected = _themeManager.currentTheme.id == t.id;
-    
+
     return GestureDetector(
       onTap: () {
         _hapticService.selection();
@@ -161,11 +168,18 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
           color: currentTheme.surfaceColor,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isSelected ? t.primaryColor : currentTheme.primaryColor.withValues(alpha: 0.2),
+            color: isSelected
+                ? t.primaryColor
+                : currentTheme.primaryColor.withValues(alpha: 0.2),
             width: isSelected ? 2 : 1,
           ),
           boxShadow: isSelected
-              ? [BoxShadow(color: t.primaryColor.withValues(alpha: 0.3), blurRadius: 12)]
+              ? [
+                  BoxShadow(
+                    color: t.primaryColor.withValues(alpha: 0.3),
+                    blurRadius: 12,
+                  ),
+                ]
               : null,
         ),
         child: Row(
@@ -192,7 +206,9 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                     ),
                   ),
                   Text(
-                    t.brightness == Brightness.dark ? 'Dark Mode' : 'Light Mode',
+                    t.brightness == Brightness.dark
+                        ? 'Dark Mode'
+                        : 'Light Mode',
                     style: TextStyle(
                       color: currentTheme.textColor.withValues(alpha: 0.5),
                       fontSize: 12,
@@ -201,11 +217,13 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                 ],
               ),
             ),
-            if (isSelected)
-              Icon(Icons.check_circle, color: t.primaryColor),
+            if (isSelected) Icon(Icons.check_circle, color: t.primaryColor),
             if (isCustom)
               IconButton(
-                icon: Icon(Icons.delete, color: Colors.red.withValues(alpha: 0.7)),
+                icon: Icon(
+                  Icons.delete,
+                  color: Colors.red.withValues(alpha: 0.7),
+                ),
                 onPressed: () {
                   _hapticService.warning();
                   _themeManager.removeCustomTheme(t.id);
@@ -246,10 +264,12 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
             value: _configOptimizer.settings.autoOptimize,
             onChanged: (v) {
               _hapticService.onSwitch();
-              _configOptimizer.settings = _configOptimizer.settings.copyWith(autoOptimize: v);
+              _configOptimizer.settings = _configOptimizer.settings.copyWith(
+                autoOptimize: v,
+              );
               setState(() {});
             },
-            activeColor: theme.primaryColor,
+            activeThumbColor: theme.primaryColor,
           ),
         ),
         _buildSettingCard(
@@ -274,13 +294,15 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               activeColor: theme.primaryColor,
               onChanged: (v) {
                 _hapticService.onSliderChange();
-                _configOptimizer.settings = _configOptimizer.settings.copyWith(mtuSize: v.toInt());
+                _configOptimizer.settings = _configOptimizer.settings.copyWith(
+                  mtuSize: v.toInt(),
+                );
                 setState(() {});
               },
             ),
           ),
         ),
-        
+
         const SizedBox(height: 24),
         _buildSectionHeader('ANTI-FILTERING', theme),
         const SizedBox(height: 12),
@@ -293,10 +315,12 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
             value: _fragmentService.settings.fragmentEnabled,
             onChanged: (v) {
               _hapticService.onSwitch();
-              _fragmentService.settings = _fragmentService.settings.copyWith(fragmentEnabled: v);
+              _fragmentService.settings = _fragmentService.settings.copyWith(
+                fragmentEnabled: v,
+              );
               setState(() {});
             },
-            activeColor: theme.primaryColor,
+            activeThumbColor: theme.primaryColor,
           ),
         ),
         _buildSettingCard(
@@ -308,10 +332,12 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
             value: _fragmentService.settings.tlsPaddingEnabled,
             onChanged: (v) {
               _hapticService.onSwitch();
-              _fragmentService.settings = _fragmentService.settings.copyWith(tlsPaddingEnabled: v);
+              _fragmentService.settings = _fragmentService.settings.copyWith(
+                tlsPaddingEnabled: v,
+              );
               setState(() {});
             },
-            activeColor: theme.primaryColor,
+            activeThumbColor: theme.primaryColor,
           ),
         ),
         _buildSettingCard(
@@ -323,10 +349,12 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
             value: _fragmentService.settings.sniRandomizationEnabled,
             onChanged: (v) {
               _hapticService.onSwitch();
-              _fragmentService.settings = _fragmentService.settings.copyWith(sniRandomizationEnabled: v);
+              _fragmentService.settings = _fragmentService.settings.copyWith(
+                sniRandomizationEnabled: v,
+              );
               setState(() {});
             },
-            activeColor: theme.primaryColor,
+            activeThumbColor: theme.primaryColor,
           ),
         ),
         _buildSettingCard(
@@ -336,7 +364,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
           theme: theme,
           onTap: () => _showFingerprintSelector(theme),
         ),
-        
+
         const SizedBox(height: 24),
         _buildSectionHeader('AUTO-RECONNECT', theme),
         const SizedBox(height: 12),
@@ -352,7 +380,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               _autoReconnect.setEnabled(v);
               setState(() {});
             },
-            activeColor: theme.primaryColor,
+            activeThumbColor: theme.primaryColor,
           ),
         ),
         _buildSettingCard(
@@ -418,7 +446,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
             ],
           ),
         ),
-        
+
         // Apps list
         if (_splitTunnelingService.mode != SplitTunnelMode.disabled)
           Expanded(
@@ -427,7 +455,11 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                     child: CircularProgressIndicator(color: theme.primaryColor),
                   )
                 : ListView.builder(
-                    padding: const EdgeInsets.only(left: 16, right: 16, bottom: 100),
+                    padding: const EdgeInsets.only(
+                      left: 16,
+                      right: 16,
+                      bottom: 100,
+                    ),
                     itemCount: _splitTunnelingService.installedApps.length,
                     itemBuilder: (context, index) {
                       final app = _splitTunnelingService.installedApps[index];
@@ -497,9 +529,14 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     );
   }
 
-  Widget _buildModeChip(String label, SplitTunnelMode mode, IconData icon, AppThemeData theme) {
+  Widget _buildModeChip(
+    String label,
+    SplitTunnelMode mode,
+    IconData icon,
+    AppThemeData theme,
+  ) {
     final isSelected = _splitTunnelingService.mode == mode;
-    
+
     return Expanded(
       child: GestureDetector(
         onTap: () {
@@ -513,7 +550,9 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
             color: isSelected ? theme.primaryColor : theme.surfaceColor,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isSelected ? theme.primaryColor : theme.primaryColor.withValues(alpha: 0.3),
+              color: isSelected
+                  ? theme.primaryColor
+                  : theme.primaryColor.withValues(alpha: 0.3),
             ),
           ),
           child: Column(
@@ -544,14 +583,16 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     final isSelected = _splitTunnelingService.mode == SplitTunnelMode.bypass
         ? _splitTunnelingService.bypassPackages.contains(app.packageName)
         : _splitTunnelingService.selectedPackages.contains(app.packageName);
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: theme.surfaceColor,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isSelected ? theme.primaryColor : theme.primaryColor.withValues(alpha: 0.2),
+          color: isSelected
+              ? theme.primaryColor
+              : theme.primaryColor.withValues(alpha: 0.2),
         ),
       ),
       child: ListTile(
@@ -594,7 +635,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
             }
             setState(() {});
           },
-          activeColor: theme.primaryColor,
+          activeThumbColor: theme.primaryColor,
         ),
       ),
     );
@@ -618,10 +659,10 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               if (v) _hapticService.success();
               setState(() {});
             },
-            activeColor: theme.primaryColor,
+            activeThumbColor: theme.primaryColor,
           ),
         ),
-        
+
         const SizedBox(height: 24),
         _buildSectionHeader('ABOUT', theme),
         const SizedBox(height: 12),
@@ -684,9 +725,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
         decoration: BoxDecoration(
           color: theme.surfaceColor,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: theme.primaryColor.withValues(alpha: 0.2),
-          ),
+          border: Border.all(color: theme.primaryColor.withValues(alpha: 0.2)),
         ),
         child: Row(
           children: [
@@ -728,7 +767,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
 
   void _showDnsSelector(AppThemeData theme) {
     final dnsOptions = ['1.1.1.1', '8.8.8.8', '9.9.9.9', 'DoH', 'DoT'];
-    
+
     showModalBottomSheet(
       context: context,
       backgroundColor: theme.surfaceColor,
@@ -751,19 +790,22 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               ),
             ),
             const SizedBox(height: 16),
-            ...dnsOptions.map((dns) => ListTile(
-              leading: Icon(Icons.dns, color: theme.primaryColor),
-              title: Text(dns, style: TextStyle(color: theme.textColor)),
-              trailing: _configOptimizer.settings.preferredDns == dns
-                  ? Icon(Icons.check_circle, color: theme.primaryColor)
-                  : null,
-              onTap: () {
-                _hapticService.selection();
-                _configOptimizer.settings = _configOptimizer.settings.copyWith(preferredDns: dns);
-                setState(() {});
-                Navigator.pop(context);
-              },
-            )),
+            ...dnsOptions.map(
+              (dns) => ListTile(
+                leading: Icon(Icons.dns, color: theme.primaryColor),
+                title: Text(dns, style: TextStyle(color: theme.textColor)),
+                trailing: _configOptimizer.settings.preferredDns == dns
+                    ? Icon(Icons.check_circle, color: theme.primaryColor)
+                    : null,
+                onTap: () {
+                  _hapticService.selection();
+                  _configOptimizer.settings = _configOptimizer.settings
+                      .copyWith(preferredDns: dns);
+                  setState(() {});
+                  Navigator.pop(context);
+                },
+              ),
+            ),
           ],
         ),
       ),
@@ -771,8 +813,16 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
   }
 
   void _showFingerprintSelector(AppThemeData theme) {
-    final fingerprintOptions = ['chrome', 'firefox', 'safari', 'edge', 'ios', 'android', 'random'];
-    
+    final fingerprintOptions = [
+      'chrome',
+      'firefox',
+      'safari',
+      'edge',
+      'ios',
+      'android',
+      'random',
+    ];
+
     showModalBottomSheet(
       context: context,
       backgroundColor: theme.surfaceColor,
@@ -795,19 +845,25 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
               ),
             ),
             const SizedBox(height: 16),
-            ...fingerprintOptions.map((fp) => ListTile(
-              leading: Icon(Icons.fingerprint, color: theme.primaryColor),
-              title: Text(fp.toUpperCase(), style: TextStyle(color: theme.textColor)),
-              trailing: _fragmentService.settings.tlsFingerprint == fp
-                  ? Icon(Icons.check_circle, color: theme.primaryColor)
-                  : null,
-              onTap: () {
-                _hapticService.selection();
-                _fragmentService.settings = _fragmentService.settings.copyWith(tlsFingerprint: fp);
-                setState(() {});
-                Navigator.pop(context);
-              },
-            )),
+            ...fingerprintOptions.map(
+              (fp) => ListTile(
+                leading: Icon(Icons.fingerprint, color: theme.primaryColor),
+                title: Text(
+                  fp.toUpperCase(),
+                  style: TextStyle(color: theme.textColor),
+                ),
+                trailing: _fragmentService.settings.tlsFingerprint == fp
+                    ? Icon(Icons.check_circle, color: theme.primaryColor)
+                    : null,
+                onTap: () {
+                  _hapticService.selection();
+                  _fragmentService.settings = _fragmentService.settings
+                      .copyWith(tlsFingerprint: fp);
+                  setState(() {});
+                  Navigator.pop(context);
+                },
+              ),
+            ),
           ],
         ),
       ),
@@ -818,7 +874,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     Color selectedColor = theme.primaryColor;
     final nameController = TextEditingController();
     bool isDark = true;
-    
+
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -845,9 +901,13 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                   style: TextStyle(color: theme.textColor),
                   decoration: InputDecoration(
                     labelText: 'Theme Name',
-                    labelStyle: TextStyle(color: theme.textColor.withValues(alpha: 0.5)),
+                    labelStyle: TextStyle(
+                      color: theme.textColor.withValues(alpha: 0.5),
+                    ),
                     enabledBorder: OutlineInputBorder(
-                      borderSide: BorderSide(color: theme.primaryColor.withValues(alpha: 0.3)),
+                      borderSide: BorderSide(
+                        color: theme.primaryColor.withValues(alpha: 0.3),
+                      ),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderSide: BorderSide(color: theme.primaryColor),
@@ -860,37 +920,44 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
-                  children: [
-                    Colors.red,
-                    Colors.pink,
-                    Colors.purple,
-                    Colors.deepPurple,
-                    Colors.indigo,
-                    Colors.blue,
-                    Colors.cyan,
-                    Colors.teal,
-                    Colors.green,
-                    Colors.lime,
-                    Colors.yellow,
-                    Colors.orange,
-                    Colors.deepOrange,
-                  ].map((color) => GestureDetector(
-                    onTap: () {
-                      setDialogState(() => selectedColor = color);
-                    },
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: color,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: selectedColor == color ? Colors.white : Colors.transparent,
-                          width: 3,
-                        ),
-                      ),
-                    ),
-                  )).toList(),
+                  children:
+                      [
+                            Colors.red,
+                            Colors.pink,
+                            Colors.purple,
+                            Colors.deepPurple,
+                            Colors.indigo,
+                            Colors.blue,
+                            Colors.cyan,
+                            Colors.teal,
+                            Colors.green,
+                            Colors.lime,
+                            Colors.yellow,
+                            Colors.orange,
+                            Colors.deepOrange,
+                          ]
+                          .map(
+                            (color) => GestureDetector(
+                              onTap: () {
+                                setDialogState(() => selectedColor = color);
+                              },
+                              child: Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: color,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: selectedColor == color
+                                        ? Colors.white
+                                        : Colors.transparent,
+                                    width: 3,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
                 ),
                 const SizedBox(height: 16),
                 Row(
@@ -900,7 +967,7 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
                     Switch(
                       value: isDark,
                       onChanged: (v) => setDialogState(() => isDark = v),
-                      activeColor: selectedColor,
+                      activeThumbColor: selectedColor,
                     ),
                   ],
                 ),
@@ -910,7 +977,10 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text('CANCEL', style: TextStyle(color: theme.textColor.withValues(alpha: 0.5))),
+              child: Text(
+                'CANCEL',
+                style: TextStyle(color: theme.textColor.withValues(alpha: 0.5)),
+              ),
             ),
             ElevatedButton(
               onPressed: () {

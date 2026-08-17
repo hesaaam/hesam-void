@@ -94,14 +94,20 @@ class SshConfig {
 
   static SshConfigType _parseConfigType(String? type) {
     switch (type?.toUpperCase()) {
+      case 'SSH':
+      case 'DIRECT':
       case 'SSH-DIRECT':
         return SshConfigType.direct;
+      case 'WEBSOCKET':
       case 'SSH-WS':
       case 'SSH-WEBSOCKET':
         return SshConfigType.websocket;
+      case 'SSL':
+      case 'TLS':
       case 'SSH-SSL':
       case 'SSH-TLS':
         return SshConfigType.ssl;
+      case 'SLOWDNS':
       case 'SSH-SLOWDNS':
         return SshConfigType.slowDns;
       default:
@@ -122,10 +128,23 @@ class SshConfig {
     }
   }
 
+  static String _npvtConfigType(SshConfigType type) {
+    switch (type) {
+      case SshConfigType.direct:
+        return 'SSH-DIRECT';
+      case SshConfigType.websocket:
+        return 'SSH-WS';
+      case SshConfigType.ssl:
+        return 'SSH-SSL';
+      case SshConfigType.slowDns:
+        return 'SSH-SLOWDNS';
+    }
+  }
+
   /// Export to npvt-ssh:// URL
   String toNpvtUrl() {
     final json = {
-      'sshConfigType': configType.name.toUpperCase(),
+      'sshConfigType': _npvtConfigType(configType),
       'remarks': remarks,
       'sshHost': sshHost,
       'sshPort': sshPort,
@@ -221,12 +240,7 @@ class SshConfig {
 }
 
 /// SSH Configuration Types
-enum SshConfigType {
-  direct,
-  websocket,
-  ssl,
-  slowDns,
-}
+enum SshConfigType { direct, websocket, ssl, slowDns }
 
 extension SshConfigTypeExtension on SshConfigType {
   String get displayName {
@@ -257,8 +271,4 @@ extension SshConfigTypeExtension on SshConfigType {
 }
 
 /// DNS Tunnel Mode
-enum DnsTTMode {
-  UDP,
-  TCP,
-  DOH,
-}
+enum DnsTTMode { UDP, TCP, DOH }

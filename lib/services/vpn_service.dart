@@ -5,15 +5,11 @@ import 'package:flutter_v2ray/flutter_v2ray.dart';
 import '../models/vpn_config.dart';
 import '../models/ssh_config.dart';
 import 'ssh_tunnel_service.dart';
+import 'split_tunneling_service.dart';
+import 'connection_health_service.dart';
 
 /// VPN Connection States
-enum VpnStatus {
-  disconnected,
-  connecting,
-  connected,
-  disconnecting,
-  error,
-}
+enum VpnStatus { disconnected, connecting, connected, disconnecting, error }
 
 /// VPN Connection Statistics
 class VpnStats {
@@ -38,14 +34,16 @@ class VpnStats {
 
   String _formatSpeed(int bytesPerSec) {
     if (bytesPerSec < 1024) return '$bytesPerSec B/s';
-    if (bytesPerSec < 1024 * 1024) return '${(bytesPerSec / 1024).toStringAsFixed(1)} KB/s';
+    if (bytesPerSec < 1024 * 1024)
+      return '${(bytesPerSec / 1024).toStringAsFixed(1)} KB/s';
     return '${(bytesPerSec / (1024 * 1024)).toStringAsFixed(1)} MB/s';
   }
 
   String _formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    if (bytes < 1024 * 1024 * 1024)
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 }
@@ -94,7 +92,7 @@ class VpnService extends ChangeNotifier {
 
   // CRITICAL: FlutterV2ray instance - must be initialized before use
   late FlutterV2ray flutterV2ray;
-  
+
   VpnStatus _status = VpnStatus.disconnected;
   VpnConfig? _currentConfig;
   VpnStats _stats = VpnStats();
@@ -102,6 +100,7 @@ class VpnService extends ChangeNotifier {
   String? _coreVersion;
   bool _isInitialized = false;
   int? _sshProxyPort; // SSH proxy port when connected
+  DateTime? _suppressDropRecordingUntil;
 
   // Getters
   VpnStatus get status => _status;
@@ -113,10 +112,11 @@ class VpnService extends ChangeNotifier {
   bool get isConnected => _status == VpnStatus.connected;
   bool get isConnecting => _status == VpnStatus.connecting;
   bool get isDisconnected => _status == VpnStatus.disconnected;
-  
+
   // SSH specific getters
   int? get sshProxyPort => _sshProxyPort;
-  String? get sshProxyAddress => _sshProxyPort != null ? '127.0.0.1:$_sshProxyPort' : null;
+  String? get sshProxyAddress =>
+      _sshProxyPort != null ? '127.0.0.1:$_sshProxyPort' : null;
   bool get isSshConnection => _currentConfig?.isSsh ?? false;
 
   /// Initialize V2Ray Core - MUST be called before any VPN operations
@@ -126,14 +126,12 @@ class VpnService extends ChangeNotifier {
       notifyListeners();
       return false;
     }
-    
+
     if (_isInitialized) return true;
 
     try {
       // Create FlutterV2ray instance with status callback
-      flutterV2ray = FlutterV2ray(
-        onStatusChanged: _onStatusChanged,
-      );
+      flutterV2ray = FlutterV2ray(onStatusChanged: _onStatusChanged);
 
       // Initialize V2Ray with notification icon
       await flutterV2ray.initializeV2Ray(
@@ -144,11 +142,13 @@ class VpnService extends ChangeNotifier {
       // Get core version to verify initialization
       _coreVersion = await flutterV2ray.getCoreVersion();
       _isInitialized = true;
-      
+
       if (kDebugMode) {
-        debugPrint('[VpnService] V2Ray initialized successfully. Core version: $_coreVersion');
+        debugPrint(
+          '[VpnService] V2Ray initialized successfully. Core version: $_coreVersion',
+        );
       }
-      
+
       notifyListeners();
       return true;
     } catch (e) {
@@ -163,12 +163,15 @@ class VpnService extends ChangeNotifier {
 
   /// Handle V2Ray status changes from the core
   void _onStatusChanged(V2RayStatus v2rayStatus) {
+    final wasConnected = _status == VpnStatus.connected;
     if (kDebugMode) {
       debugPrint('[VpnService] Status changed: ${v2rayStatus.state}');
       debugPrint('[VpnService] Duration: ${v2rayStatus.duration}');
-      debugPrint('[VpnService] Upload: ${v2rayStatus.uploadSpeed} B/s, Download: ${v2rayStatus.downloadSpeed} B/s');
+      debugPrint(
+        '[VpnService] Upload: ${v2rayStatus.uploadSpeed} B/s, Download: ${v2rayStatus.downloadSpeed} B/s',
+      );
     }
-    
+
     // Update stats from V2Ray status
     _stats = VpnStats(
       uploadSpeed: v2rayStatus.uploadSpeed,
@@ -183,10 +186,21 @@ class VpnService extends ChangeNotifier {
       case 'CONNECTED':
         _status = VpnStatus.connected;
         _errorMessage = null;
+        final config = _currentConfig;
+        if (config != null) {
+          unawaited(ConnectionHealthService().recordConnected(config.id));
+        }
         break;
       case 'DISCONNECTED':
       case 'STOPPED':
         _status = VpnStatus.disconnected;
+        final config = _currentConfig;
+        final dropIsSuppressed =
+            _suppressDropRecordingUntil != null &&
+            DateTime.now().isBefore(_suppressDropRecordingUntil!);
+        if (wasConnected && config != null && !dropIsSuppressed) {
+          unawaited(ConnectionHealthService().recordDrop(config.id));
+        }
         break;
       case 'CONNECTING':
         _status = VpnStatus.connecting;
@@ -227,13 +241,15 @@ class VpnService extends ChangeNotifier {
       notifyListeners();
 
       if (kDebugMode) {
-        debugPrint('[VpnService] Parsing config URL: ${config.rawUrl.substring(0, 50)}...');
+        debugPrint(
+          '[VpnService] Parsing config URL: ${config.rawUrl.substring(0, 50)}...',
+        );
       }
 
       // CRITICAL: Use FlutterV2ray.parseFromURL to parse the config
       // This is the official way as per flutter_v2ray documentation
       V2RayURL parser = FlutterV2ray.parseFromURL(config.rawUrl);
-      
+
       String remark = parser.remark.isNotEmpty ? parser.remark : config.name;
       String fullConfig = parser.getFullConfiguration();
 
@@ -255,13 +271,17 @@ class VpnService extends ChangeNotifier {
         debugPrint('[VpnService] VPN permission granted. Starting V2Ray...');
       }
 
+      // Resolve selected app routing immediately before starting the tunnel.
+      // An empty policy keeps the engine default (all apps through VPN).
+      final blockedApps = await _resolveBlockedApps();
+
       // Start V2Ray with the configuration
       // CRITICAL: proxyOnly = false means VPN mode (routes all traffic)
       // bypassSubnets = bypassSubnets means bypass local network traffic
       await flutterV2ray.startV2Ray(
         remark: remark,
         config: fullConfig,
-        blockedApps: null,
+        blockedApps: blockedApps,
         bypassSubnets: bypassSubnets, // Use bypass subnets for proper routing
         proxyOnly: false, // VPN Mode - routes all traffic through V2Ray
         notificationDisconnectButtonName: "Disconnect",
@@ -275,6 +295,9 @@ class VpnService extends ChangeNotifier {
     } catch (e) {
       _status = VpnStatus.error;
       _errorMessage = 'Connection failed: $e';
+      unawaited(
+        ConnectionHealthService().recordFailure(config.id, _errorMessage!),
+      );
       if (kDebugMode) {
         debugPrint('[VpnService] Connection error: $e');
       }
@@ -294,21 +317,27 @@ class VpnService extends ChangeNotifier {
 
       if (kDebugMode) {
         debugPrint('[VpnService] SSH Config detected: ${config.name}');
-        debugPrint('[VpnService] Raw URL: ${config.rawUrl.substring(0, 50)}...');
+        debugPrint(
+          '[VpnService] Raw URL: ${config.rawUrl.substring(0, 50)}...',
+        );
       }
 
       // CRITICAL FIX: Parse SSH config directly from rawUrl for accurate credentials
       SshConfig? sshConfig;
-      
+
       if (config.rawUrl.startsWith('npvt-ssh://')) {
         // Parse directly from NPVT-SSH URL for accurate credentials
         try {
           sshConfig = SshConfig.fromNpvtUrl(config.rawUrl, config.id);
           if (kDebugMode) {
             debugPrint('[VpnService] Parsed from NPVT URL:');
-            debugPrint('[VpnService]   Host: ${sshConfig.sshHost}:${sshConfig.sshPort}');
+            debugPrint(
+              '[VpnService]   Host: ${sshConfig.sshHost}:${sshConfig.sshPort}',
+            );
             debugPrint('[VpnService]   Username: ${sshConfig.sshUsername}');
-            debugPrint('[VpnService]   Type: ${sshConfig.configType.displayName}');
+            debugPrint(
+              '[VpnService]   Type: ${sshConfig.configType.displayName}',
+            );
           }
         } catch (e) {
           if (kDebugMode) {
@@ -317,7 +346,7 @@ class VpnService extends ChangeNotifier {
           sshConfig = null;
         }
       }
-      
+
       // Fallback: Create SshConfig from VpnConfig fields if URL parsing failed
       sshConfig ??= SshConfig(
         id: config.id,
@@ -338,7 +367,7 @@ class VpnService extends ChangeNotifier {
         notifyListeners();
         return false;
       }
-      
+
       if (sshConfig.sshUsername.isEmpty) {
         _status = VpnStatus.error;
         _errorMessage = 'SSH username is empty';
@@ -347,7 +376,9 @@ class VpnService extends ChangeNotifier {
       }
 
       if (kDebugMode) {
-        debugPrint('[VpnService] Connecting SSH: ${sshConfig.sshUsername}@${sshConfig.sshHost}:${sshConfig.sshPort}');
+        debugPrint(
+          '[VpnService] Connecting SSH: ${sshConfig.sshUsername}@${sshConfig.sshHost}:${sshConfig.sshPort}',
+        );
       }
 
       // Step 0: CRITICAL - Resolve SSH server IP BEFORE connecting
@@ -382,9 +413,11 @@ class VpnService extends ChangeNotifier {
       }
 
       _sshProxyPort = sshService.localPort;
-      
+
       if (kDebugMode) {
-        debugPrint('[VpnService] SSH tunnel established on port $_sshProxyPort');
+        debugPrint(
+          '[VpnService] SSH tunnel established on port $_sshProxyPort',
+        );
         debugPrint('[VpnService] Starting V2Ray VPN with SOCKS proxy...');
       }
 
@@ -400,7 +433,7 @@ class VpnService extends ChangeNotifier {
 
       // Step 3: Create V2Ray config that uses SSH SOCKS proxy as outbound
       final v2rayConfig = _buildSshV2RayConfig(sshConfig, _sshProxyPort!);
-      
+
       if (kDebugMode) {
         debugPrint('[VpnService] V2Ray config for SSH:');
         debugPrint(v2rayConfig);
@@ -415,38 +448,58 @@ class VpnService extends ChangeNotifier {
         if (!sshBypassSubnets.contains(sshServerSubnet)) {
           sshBypassSubnets.add(sshServerSubnet);
           if (kDebugMode) {
-            debugPrint('[VpnService] Added SSH server to bypass: $sshServerSubnet');
+            debugPrint(
+              '[VpnService] Added SSH server to bypass: $sshServerSubnet',
+            );
           }
         }
       }
 
       // Step 5: Start V2Ray VPN mode with SSH as backend
+      final blockedApps = await _resolveBlockedApps();
       await flutterV2ray.startV2Ray(
         remark: sshConfig.remarks.isNotEmpty ? sshConfig.remarks : 'SSH Server',
         config: v2rayConfig,
-        blockedApps: null,
-        bypassSubnets: sshBypassSubnets, // IMPORTANT: Includes SSH server bypass!
+        blockedApps: blockedApps,
+        bypassSubnets:
+            sshBypassSubnets, // IMPORTANT: Includes SSH server bypass!
         proxyOnly: false, // VPN Mode - routes ALL traffic
         notificationDisconnectButtonName: "Disconnect",
       );
 
       // Monitor SSH stats
       _monitorSshStats(sshService);
-      
+
       if (kDebugMode) {
         debugPrint('[VpnService] SSH + VPN started successfully!');
       }
 
       return true;
-      
     } catch (e) {
       _status = VpnStatus.error;
       _errorMessage = 'SSH connection failed: $e';
+      unawaited(
+        ConnectionHealthService().recordFailure(config.id, _errorMessage!),
+      );
       if (kDebugMode) {
         debugPrint('[VpnService] SSH error: $e');
       }
       notifyListeners();
       return false;
+    }
+  }
+
+  Future<List<String>?> _resolveBlockedApps() async {
+    try {
+      final splitTunneling = SplitTunnelingService();
+      await splitTunneling.initialize();
+      final packages = splitTunneling.getBypassPackagesForV2Ray();
+      return packages.isEmpty ? null : packages;
+    } catch (error) {
+      // App routing must not prevent a user-owned configuration from connecting.
+      if (kDebugMode)
+        debugPrint('[VpnService] Split tunneling unavailable: $error');
+      return null;
     }
   }
 
@@ -457,7 +510,7 @@ class VpnService extends ChangeNotifier {
   String _buildSshV2RayConfig(SshConfig sshConfig, int localPort) {
     // CRITICAL: SSH server address must be bypassed to prevent loop
     final sshServerHost = sshConfig.sshHost;
-    
+
     return '''
 {
   "log": {
@@ -573,6 +626,9 @@ class VpnService extends ChangeNotifier {
 
     try {
       _status = VpnStatus.disconnecting;
+      _suppressDropRecordingUntil = DateTime.now().add(
+        const Duration(seconds: 3),
+      );
       notifyListeners();
 
       if (kDebugMode) {
@@ -581,7 +637,7 @@ class VpnService extends ChangeNotifier {
 
       // Stop V2Ray VPN
       await flutterV2ray.stopV2Ray();
-      
+
       // Also stop SSH tunnel if it was active
       if (_sshProxyPort != null) {
         if (kDebugMode) {
@@ -591,14 +647,14 @@ class VpnService extends ChangeNotifier {
         await sshService.disconnect();
         _sshProxyPort = null;
       }
-      
+
       _status = VpnStatus.disconnected;
       _stats = VpnStats();
-      
+
       if (kDebugMode) {
         debugPrint('[VpnService] VPN stopped successfully');
       }
-      
+
       notifyListeners();
     } catch (e) {
       _errorMessage = 'Disconnect failed: $e';
@@ -627,14 +683,14 @@ class VpnService extends ChangeNotifier {
       // Parse the config URL
       V2RayURL parser = FlutterV2ray.parseFromURL(config.rawUrl);
       String fullConfig = parser.getFullConfiguration();
-      
+
       // Use flutter_v2ray's getServerDelay method
       final delay = await flutterV2ray.getServerDelay(config: fullConfig);
-      
+
       if (kDebugMode) {
         debugPrint('[VpnService] Server delay for ${config.name}: ${delay}ms');
       }
-      
+
       return delay;
     } catch (e) {
       if (kDebugMode) {
@@ -650,11 +706,11 @@ class VpnService extends ChangeNotifier {
 
     try {
       final delay = await flutterV2ray.getConnectedServerDelay();
-      
+
       if (kDebugMode) {
         debugPrint('[VpnService] Connected server delay: ${delay}ms');
       }
-      
+
       return delay;
     } catch (e) {
       if (kDebugMode) {
