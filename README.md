@@ -1,35 +1,38 @@
-# Hesam Void
+# Hesam Void 4SUPER
 
 > **A local-first Android connection navigator for user-owned VPN and SSH configurations.**
 
 Hesam Void is an Android client for people who manage their own proxy and SSH profiles. It imports supported configuration links, establishes a device VPN tunnel through Xray or SSH/SOCKS, and helps the user make a transparent, on-device decision about which profile is most reliable right now.
 
-The goal of version 4 is simple: **make every visible control meaningful**. The app does not sell VPN servers, require an account, upload raw configuration URLs, or make guaranteed availability claims.
+**4SUPER** turns Hesam Void into an Alive Signal workspace: a local-first experience for choosing a route, understanding its health, connecting with intention and reviewing what happened afterwards. The app does not sell VPN servers, require an account, upload raw configuration URLs, or make guaranteed availability claims.
 
-## Download the v4.0.1 APK
+## Download 4SUPER APK
 
 <p align="center">
-  <a href="https://github.com/hesaaam/hesam-void/releases/download/v4.0.1/hesam-void-v4.0.1-universal.apk">
-    <img src="assets/images/hesam-void-v4.0.1-download-qr.png" width="280" alt="Scan to download Hesam Void v4.0.1 Universal APK directly">
+  <a href="https://github.com/hesaaam/hesam-void/releases/download/v4.0.2/hesam-void-4super-universal.apk">
+    <img src="assets/images/hesam-void-4super-download-qr.png" width="280" alt="Scan to download Hesam Void 4SUPER Universal APK directly">
   </a>
 </p>
 
-<p align="center"><strong>Scan the QR Code to download the corrected Universal APK directly.</strong></p>
+<p align="center"><strong>Scan the QR Code to download the 4SUPER Universal APK directly.</strong></p>
 
-The QR Code contains the direct APK asset URL, not the Release page. On most Android phones, scanning opens the browser download flow immediately. You can also use the direct link: [Download Hesam Void v4.0.1 Universal APK](https://github.com/hesaaam/hesam-void/releases/download/v4.0.1/hesam-void-v4.0.1-universal.apk).
+The QR Code contains the direct APK asset URL, not the Release page. On most Android phones, scanning opens the browser download flow immediately. You can also use the direct link: [Download Hesam Void 4SUPER Universal APK](https://github.com/hesaaam/hesam-void/releases/download/v4.0.2/hesam-void-4super-universal.apk).
 
 > Android may ask you to allow installation from your browser or file manager. If an older build was signed with a different key, uninstall it before installing this test release.
 
-## What makes v4 different
+## What makes 4SUPER different
 
 | Capability | What the user gets | What stays local |
 |---|---|---|
+| **Alive Signal Canvas** | The home screen now shows actual engine states for ready, connecting, protected, disconnecting and attention; it is not a timer-driven mock animation. | Current status and local traffic statistics. |
+| **Quick Connect** | A route sheet with the selected profile, `Best now` recommendation, local health reasons and direct connect action. | Profile ranking, latency and health events. |
+| **Connection Story** | A readable timeline for local checks, successful connects, errors and unexpected drops, including the current redacted error when present. | Event time, latency, success/failure and sanitized reason. |
+| **Server Studio** | Rich profile cards with health score, latest local latency, success rate, per-profile actions and persistent Favorites. | Favorite profile identifiers and health evidence. |
+| **Experience Controls** | Motion can be Standard, Reduced or Off; Server Studio can use a compact density. These preferences never change routing behavior. | UI preferences only. |
 | **Connection Navigator** | A 0–100 profile health score, a `Best now` recommendation, and a readable explanation based on success, latency, recency and unexpected drops. | Connection events, latency results and profile ranking. |
 | **Reliable recovery** | Auto-reconnect distinguishes a manual disconnect from an unexpected failure. A user-selected server queue can fail over after the configured retry budget. | Retry policy and profile order. |
-| **Real profile import** | Clipboard import, manual entry and QR-camera scanning validate supported configuration URLs before import. | All scanned and imported content. |
-| **Real app routing** | Android launchable apps are listed from the device; selected bypass policies are passed to the VPN engine immediately before connection. | Installed-app list and route policy. |
-| **Hardened SSH gateway** | A loopback-only SOCKS5 server is backed by one SSH session, with direct SSH, TLS and WebSocket transports, per-request forwarding and safe cleanup. | SSH host, username, password and tunnel traffic metadata. |
-| **Encrypted profile store** | Profile and app-setting boxes use AES-256 encryption. The encryption key is generated on-device and stored through the platform secure-storage provider. | Configuration URLs, SSH credentials and app settings. |
+| **Real profile import and routing** | Clipboard import, manual entry, QR scanning and Android app-routing policies are connected to the actual import and VPN paths. | Imported content, installed-app list and route policy. |
+| **Encrypted profile store** | Profile and app-setting boxes use AES-256 encryption with an on-device key through the platform secure-storage provider. | Configuration URLs, SSH credentials and app settings. |
 
 ## Supported configuration formats
 
@@ -79,7 +82,7 @@ The resulting APK is written to:
 build/app/outputs/flutter-apk/app-release.apk
 ```
 
-## Development standards for v4
+## Development standards for 4SUPER
 
 Every new user-facing network feature should satisfy three requirements before it is shown as stable: it must be wired into the actual connection pipeline, validated through tests, and documented without overclaiming. Features that require a platform-specific implementation should fail clearly on unsupported platforms instead of simulating a result.
 

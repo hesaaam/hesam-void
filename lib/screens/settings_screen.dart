@@ -6,6 +6,7 @@ import '../services/split_tunneling_service.dart';
 import '../services/config_optimizer_service.dart';
 import '../services/fragment_service.dart';
 import '../services/auto_reconnect_service.dart';
+import '../services/experience_preferences_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -23,6 +24,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   final _configOptimizer = ConfigOptimizerService();
   final _fragmentService = FragmentService();
   final _autoReconnect = AutoReconnectService();
+  final _experience = ExperiencePreferencesService();
   String _appVersion = 'Loading…';
 
   @override
@@ -37,11 +39,13 @@ class _SettingsScreenState extends State<SettingsScreen>
     await _themeManager.initialize();
     await _hapticService.initialize();
     await _splitTunnelingService.initialize();
+    await _experience.initialize();
     // These services are already initialized in main.dart with Hive
     // but we add listeners for UI updates
     _configOptimizer.addListener(_onSettingsChanged);
     _fragmentService.addListener(_onSettingsChanged);
     _autoReconnect.addListener(_onSettingsChanged);
+    _experience.addListener(_onSettingsChanged);
     if (mounted) setState(() {});
   }
 
@@ -65,6 +69,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     _configOptimizer.removeListener(_onSettingsChanged);
     _fragmentService.removeListener(_onSettingsChanged);
     _autoReconnect.removeListener(_onSettingsChanged);
+    _experience.removeListener(_onSettingsChanged);
     super.dispose();
   }
 
@@ -677,6 +682,35 @@ class _SettingsScreenState extends State<SettingsScreen>
         ),
 
         const SizedBox(height: 24),
+        _buildSectionHeader('4SUPER EXPERIENCE', theme),
+        const SizedBox(height: 12),
+        _buildSettingCard(
+          icon: Icons.motion_photos_on_rounded,
+          title: 'Motion Intensity',
+          subtitle:
+              '${_experience.motionLabel} • affects visual transitions only',
+          theme: theme,
+          trailing: Icon(
+            Icons.chevron_right_rounded,
+            color: theme.primaryColor,
+          ),
+          onTap: () => _showMotionPreferences(theme),
+        ),
+        _buildSettingCard(
+          icon: Icons.view_agenda_rounded,
+          title: 'Compact Server Studio',
+          subtitle: 'Use denser route cards in the Server Studio',
+          theme: theme,
+          trailing: Switch(
+            value: _experience.compactStudio,
+            onChanged: (value) {
+              _experience.setCompactStudio(value);
+            },
+            activeThumbColor: theme.primaryColor,
+          ),
+        ),
+
+        const SizedBox(height: 24),
         _buildSectionHeader('ABOUT', theme),
         const SizedBox(height: 12),
         _buildSettingCard(
@@ -712,6 +746,89 @@ class _SettingsScreenState extends State<SettingsScreen>
         // Extra padding at bottom
         const SizedBox(height: 100),
       ],
+    );
+  }
+
+  Future<void> _showMotionPreferences(AppThemeData theme) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: theme.surfaceColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 26),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'MOTION INTENSITY',
+                  style: TextStyle(
+                    color: theme.primaryColor,
+                    fontFamily: 'JetBrainsMono',
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'This changes visual transitions only. It never changes routing or connection behavior.',
+                  style: TextStyle(
+                    color: theme.textColor.withValues(alpha: .58),
+                    fontFamily: 'JetBrainsMono',
+                    fontSize: 11,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                ...MotionPreference.values.map((preference) {
+                  final selected = _experience.motionPreference == preference;
+                  final detail = switch (preference) {
+                    MotionPreference.standard => 'Full Alive Signal feedback',
+                    MotionPreference.reduced =>
+                      'Shorter and calmer transitions',
+                    MotionPreference.off => 'No decorative motion',
+                  };
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    onTap: () async {
+                      await _experience.setMotionPreference(preference);
+                      if (context.mounted) Navigator.pop(context);
+                    },
+                    leading: Icon(
+                      selected
+                          ? Icons.radio_button_checked_rounded
+                          : Icons.radio_button_off_rounded,
+                      color: selected
+                          ? theme.primaryColor
+                          : theme.textColor.withValues(alpha: .4),
+                    ),
+                    title: Text(
+                      preference.name.toUpperCase(),
+                      style: TextStyle(
+                        color: theme.textColor,
+                        fontFamily: 'JetBrainsMono',
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    subtitle: Text(
+                      detail,
+                      style: TextStyle(
+                        color: theme.textColor.withValues(alpha: .52),
+                        fontFamily: 'JetBrainsMono',
+                        fontSize: 10.5,
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
