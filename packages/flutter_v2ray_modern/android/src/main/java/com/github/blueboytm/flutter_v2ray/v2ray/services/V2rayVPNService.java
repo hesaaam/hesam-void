@@ -2,8 +2,6 @@ package com.github.blueboytm.flutter_v2ray.v2ray.services;
 
 import android.app.Service;
 import android.content.Intent;
-import android.net.LocalSocket;
-import android.net.LocalSocketAddress;
 import android.net.VpnService;
 import android.os.Build;
 import android.os.ParcelFileDescriptor;
@@ -18,15 +16,9 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.File;
-import java.io.FileDescriptor;
-import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.Arrays;
 
 public class V2rayVPNService extends VpnService implements V2rayServicesListener {
     private ParcelFileDescriptor mInterface;
-    private Process process;
     private V2rayConfig v2rayConfig;
     private boolean isRunning = true;
 
@@ -47,9 +39,9 @@ public class V2rayVPNService extends VpnService implements V2rayServicesListener
             if (V2rayCoreManager.getInstance().isV2rayCoreRunning()) {
                 V2rayCoreManager.getInstance().stopCore();
             }
-            // CoreController requires an established TUN descriptor. Prepare the
-            // Android VPN before starting Xray so maintained Core builds can
-            // route sockets without relying on the retired V2RayPoint callback.
+            // CoreController owns the TUN descriptor in the maintained Xray
+            // binding. Do not start the legacy tun2socks process as well: two
+            // readers for one TUN can report Connected while dropping traffic.
             if (setup() && V2rayCoreManager.getInstance().startCore(v2rayConfig, mInterface.getFd())) {
                 Log.i(V2rayVPNService.class.getSimpleName(), "onStartCommand success => maintained Xray core started.");
             } else {
@@ -74,9 +66,6 @@ public class V2rayVPNService extends VpnService implements V2rayServicesListener
     private void stopAllProcess() {
         stopForeground(true);
         isRunning = false;
-        if (process != null) {
-            process.destroy();
-        }
         V2rayCoreManager.getInstance().stopCore();
         try {
             stopSelf();
@@ -114,6 +103,14 @@ public class V2rayVPNService extends VpnService implements V2rayServicesListener
                 }
             }
         }
+        // The VPN process must use the underlying network. Otherwise Core's
+        // upstream socket can loop into its own TUN and appear connected with
+        // no usable data-plane.
+        try {
+            builder.addDisallowedApplication(getPackageName());
+        } catch (Exception e) {
+            Log.w(V2rayVPNService.class.getSimpleName(), "Unable to exclude VPN app", e);
+        }
         if (v2rayConfig.BLOCKED_APPS != null) {
             for (int i = 0; i < v2rayConfig.BLOCKED_APPS.size(); i++) {
                 try {
@@ -149,74 +146,12 @@ public class V2rayVPNService extends VpnService implements V2rayServicesListener
                 return false;
             }
             isRunning = true;
-            runTun2socks();
             return true;
         } catch (Exception e) {
             Log.e(V2rayVPNService.class.getSimpleName(), "VPN interface setup failed", e);
             stopAllProcess();
             return false;
         }
-    }
-
-    private void runTun2socks() {
-        ArrayList<String> cmd = new ArrayList<>(Arrays.asList(new File(getApplicationInfo().nativeLibraryDir, "libtun2socks.so").getAbsolutePath(),
-                "--netif-ipaddr", "26.26.26.2",
-                "--netif-netmask", "255.255.255.252",
-                "--socks-server-addr", "127.0.0.1:" + v2rayConfig.LOCAL_SOCKS5_PORT,
-                "--tunmtu", "1500",
-                "--sock-path", "sock_path",
-                "--enable-udprelay",
-                "--loglevel", "error"));
-        try {
-            ProcessBuilder processBuilder = new ProcessBuilder(cmd);
-            processBuilder.redirectErrorStream(true);
-            process = processBuilder.directory(getApplicationContext().getFilesDir()).start();
-            new Thread(() -> {
-                try {
-                    process.waitFor();
-                    if (isRunning) {
-                        runTun2socks();
-                    }
-                } catch (InterruptedException e) {
-                    //ignore
-                }
-            }, "Tun2socks_Thread").start();
-            sendFileDescriptor();
-        } catch (Exception e) {
-            Log.e("VPN_SERVICE", "FAILED=>", e);
-            this.onDestroy();
-        }
-    }
-
-    private void sendFileDescriptor() {
-        String localSocksFile = new File(getApplicationContext().getFilesDir(), "sock_path").getAbsolutePath();
-        FileDescriptor tunFd = mInterface.getFileDescriptor();
-        new Thread(() -> {
-            int tries = 0;
-            while (true) {
-                try {
-                    Thread.sleep(50L * tries);
-                    LocalSocket clientLocalSocket = new LocalSocket();
-                    clientLocalSocket.connect(new LocalSocketAddress(localSocksFile, LocalSocketAddress.Namespace.FILESYSTEM));
-                    if (!clientLocalSocket.isConnected()) {
-                        Log.e("SOCK_FILE", "Unable to connect to localSocksFile [" + localSocksFile + "]");
-                    } else {
-                        Log.e("SOCK_FILE", "connected to sock file [" + localSocksFile + "]");
-                    }
-                    OutputStream clientOutStream = clientLocalSocket.getOutputStream();
-                    clientLocalSocket.setFileDescriptorsForSend(new FileDescriptor[]{tunFd});
-                    clientOutStream.write(32);
-                    clientLocalSocket.setFileDescriptorsForSend(null);
-                    clientLocalSocket.shutdownOutput();
-                    clientLocalSocket.close();
-                    break;
-                } catch (Exception e) {
-                    Log.e(V2rayVPNService.class.getSimpleName(), "sendFd failed =>", e);
-                    if (tries > 5) break;
-                    tries += 1;
-                }
-            }
-        }, "sendFd_Thread").start();
     }
 
 
