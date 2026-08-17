@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../utils/theme_manager.dart';
 import '../services/haptic_service.dart';
 import '../services/split_tunneling_service.dart';
@@ -22,12 +23,14 @@ class _SettingsScreenState extends State<SettingsScreen>
   final _configOptimizer = ConfigOptimizerService();
   final _fragmentService = FragmentService();
   final _autoReconnect = AutoReconnectService();
+  String _appVersion = 'Loading…';
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _initializeServices();
+    _loadAppVersion();
   }
 
   Future<void> _initializeServices() async {
@@ -40,6 +43,16 @@ class _SettingsScreenState extends State<SettingsScreen>
     _fragmentService.addListener(_onSettingsChanged);
     _autoReconnect.addListener(_onSettingsChanged);
     if (mounted) setState(() {});
+  }
+
+  Future<void> _loadAppVersion() async {
+    final packageInfo = await PackageInfo.fromPlatform();
+    if (!mounted) return;
+
+    final buildSuffix = packageInfo.buildNumber.isEmpty
+        ? ''
+        : '+${packageInfo.buildNumber}';
+    setState(() => _appVersion = '${packageInfo.version}$buildSuffix');
   }
 
   void _onSettingsChanged() {
@@ -669,7 +682,13 @@ class _SettingsScreenState extends State<SettingsScreen>
         _buildSettingCard(
           icon: Icons.info,
           title: 'Version',
-          subtitle: '3.0.1',
+          subtitle: _appVersion,
+          theme: theme,
+        ),
+        _buildSettingCard(
+          icon: Icons.auto_graph,
+          title: 'Connection Navigator',
+          subtitle: 'Local health score and Best now recommendation',
           theme: theme,
         ),
         _buildSettingCard(

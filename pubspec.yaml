@@ -1,7 +1,7 @@
 name: hesam_void
 description: "Hesam Void - Professional VPN Configuration Manager with advanced protocol support for VLESS, VMess, Trojan, Shadowsocks, SSH"
 publish_to: 'none'
-version: 4.0.0+15
+version: 4.0.1+16
 
 environment:
   sdk: ^3.9.0
@@ -17,6 +17,7 @@ dependencies:
   hive: 2.2.3
   hive_flutter: 1.1.0
   flutter_secure_storage: 9.2.4
+  package_info_plus: ^8.3.1
   
   # Networking & HTTP
   http: 1.5.0
