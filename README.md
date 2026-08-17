@@ -6,6 +6,20 @@ Hesam Void is an Android client for people who manage their own proxy and SSH pr
 
 The goal of version 4 is simple: **make every visible control meaningful**. The app does not sell VPN servers, require an account, upload raw configuration URLs, or make guaranteed availability claims.
 
+## Download the v4.0.0 APK
+
+<p align="center">
+  <a href="https://github.com/hesaaam/hesam-void/releases/download/v4.0.0/hesam-void-v4.0.0-universal.apk">
+    <img src="assets/images/hesam-void-v4.0.0-download-qr.png" width="280" alt="Scan to download Hesam Void v4.0.0 Universal APK directly">
+  </a>
+</p>
+
+<p align="center"><strong>Scan the QR Code to download the Universal APK directly.</strong></p>
+
+The QR Code contains the direct APK asset URL, not the Release page. On most Android phones, scanning opens the browser download flow immediately. You can also use the direct link: [Download Hesam Void v4.0.0 Universal APK](https://github.com/hesaaam/hesam-void/releases/download/v4.0.0/hesam-void-v4.0.0-universal.apk).
+
+> Android may ask you to allow installation from your browser or file manager. If an older build was signed with a different key, uninstall it before installing this test release.
+
 ## What makes v4 different
 
 | Capability | What the user gets | What stays local |
