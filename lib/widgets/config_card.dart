@@ -18,7 +18,7 @@ class ConfigCard extends StatefulWidget {
   final Color? primaryColor;
   final Color? surfaceColor;
   final Color? textColor;
-  
+
   const ConfigCard({
     super.key,
     required this.config,
@@ -34,7 +34,7 @@ class ConfigCard extends StatefulWidget {
     this.surfaceColor,
     this.textColor,
   });
-  
+
   @override
   State<ConfigCard> createState() => _ConfigCardState();
 }
@@ -51,10 +51,7 @@ class _ConfigCardState extends State<ConfigCard>
   Widget build(BuildContext context) {
     return Animate(
       effects: [
-        FadeEffect(
-          duration: 400.ms,
-          delay: (50 * widget.index).ms,
-        ),
+        FadeEffect(duration: 400.ms, delay: (50 * widget.index).ms),
         SlideEffect(
           begin: const Offset(0.1, 0),
           end: Offset.zero,
@@ -78,8 +75,9 @@ class _ConfigCardState extends State<ConfigCard>
             border: Border.all(
               color: widget.isSelected
                   ? _primaryColor
-                  : AppTheme.getProtocolColor(widget.config.protocolString)
-                      .withValues(alpha: 0.3),
+                  : AppTheme.getProtocolColor(
+                      widget.config.protocolString,
+                    ).withValues(alpha: 0.3),
               width: widget.isSelected ? 2 : 1,
             ),
             boxShadow: widget.isSelected
@@ -102,7 +100,7 @@ class _ConfigCardState extends State<ConfigCard>
                     // Protocol badge
                     _buildProtocolBadge(),
                     const SizedBox(width: 12),
-                    
+
                     // Server info
                     Expanded(
                       child: Column(
@@ -124,7 +122,8 @@ class _ConfigCardState extends State<ConfigCard>
                             widget.config.subtitle,
                             style: TextStyle(
                               color: AppTheme.getProtocolColor(
-                                  widget.config.protocolString),
+                                widget.config.protocolString,
+                              ),
                               fontSize: 12,
                               fontFamily: 'JetBrainsMono',
                             ),
@@ -143,13 +142,13 @@ class _ConfigCardState extends State<ConfigCard>
                         ],
                       ),
                     ),
-                    
+
                     // Ping indicator
                     _buildPingIndicator(),
                   ],
                 ),
               ),
-              
+
               // Expanded actions
               AnimatedCrossFade(
                 firstChild: const SizedBox.shrink(),
@@ -168,7 +167,7 @@ class _ConfigCardState extends State<ConfigCard>
 
   Widget _buildProtocolBadge() {
     final color = AppTheme.getProtocolColor(widget.config.protocolString);
-    
+
     return Container(
       width: 48,
       height: 48,
@@ -212,10 +211,10 @@ class _ConfigCardState extends State<ConfigCard>
         ),
       );
     }
-    
+
     final ping = widget.config.ping;
     final color = AppTheme.getPingColor(ping);
-    
+
     return GestureDetector(
       onTap: widget.onTestPing,
       child: Container(
@@ -235,10 +234,7 @@ class _ConfigCardState extends State<ConfigCard>
                 color: color,
                 shape: BoxShape.circle,
                 boxShadow: [
-                  BoxShadow(
-                    color: color.withValues(alpha: 0.5),
-                    blurRadius: 8,
-                  ),
+                  BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 8),
                 ],
               ),
             ),
@@ -260,40 +256,40 @@ class _ConfigCardState extends State<ConfigCard>
 
   Widget _buildExpandedActions() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _buildActionButton(
-            icon: Icons.content_copy_rounded,
-            label: 'Copy',
-            color: AppTheme.accentCyan,
-            onTap: () {
-              Clipboard.setData(ClipboardData(text: widget.config.rawUrl));
-              widget.onExportClipboard?.call();
-            },
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildActionButton(
+                icon: Icons.content_copy_rounded,
+                label: 'Copy',
+                color: AppTheme.accentCyan,
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: widget.config.rawUrl));
+                  widget.onExportClipboard?.call();
+                },
+              ),
+              _buildActionButton(
+                icon: Icons.qr_code_rounded,
+                label: 'QR',
+                color: AppTheme.accentPurple,
+                onTap: widget.onExportQR,
+              ),
+              _buildActionButton(
+                icon: Icons.speed_rounded,
+                label: 'Ping',
+                color: _primaryColor,
+                onTap: widget.onTestPing,
+              ),
+              _buildActionButton(
+                icon: Icons.delete_outline_rounded,
+                label: 'Delete',
+                color: AppTheme.accentRed,
+                onTap: widget.onDelete,
+              ),
+            ],
           ),
-          _buildActionButton(
-            icon: Icons.qr_code_rounded,
-            label: 'QR',
-            color: AppTheme.accentPurple,
-            onTap: widget.onExportQR,
-          ),
-          _buildActionButton(
-            icon: Icons.speed_rounded,
-            label: 'Ping',
-            color: _primaryColor,
-            onTap: widget.onTestPing,
-          ),
-          _buildActionButton(
-            icon: Icons.delete_outline_rounded,
-            label: 'Delete',
-            color: AppTheme.accentRed,
-            onTap: widget.onDelete,
-          ),
-        ],
-      ),
-    )
+        )
         .animate(target: _isExpanded ? 1 : 0)
         .fadeIn(duration: 200.ms)
         .slideY(begin: -0.2, end: 0, duration: 200.ms);
@@ -341,28 +337,28 @@ class EmptyConfigsWidget extends StatelessWidget {
   final VoidCallback? onAddConfig;
   final Color? primaryColor;
   final Color? textColor;
-  
+
   const EmptyConfigsWidget({
-    super.key, 
+    super.key,
     this.onAddConfig,
     this.primaryColor,
     this.textColor,
   });
-  
+
   @override
   Widget build(BuildContext context) {
     final color = primaryColor ?? AppTheme.primaryGreen;
     final text = textColor ?? AppTheme.textPrimary;
-    
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            Icons.shield_outlined,
-            size: 80,
-            color: color.withValues(alpha: 0.3),
-          )
+                Icons.shield_outlined,
+                size: 80,
+                color: color.withValues(alpha: 0.3),
+              )
               .animate(onPlay: (c) => c.repeat())
               .shimmer(duration: 2000.ms, color: color.withValues(alpha: 0.5)),
           const SizedBox(height: 24),
@@ -386,15 +382,18 @@ class EmptyConfigsWidget extends StatelessWidget {
           ),
           const SizedBox(height: 32),
           ElevatedButton.icon(
-            onPressed: onAddConfig,
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('ADD CONFIG'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: color,
-              foregroundColor: AppTheme.backgroundDark,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-            ),
-          )
+                onPressed: onAddConfig,
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('ADD CONFIG'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: color,
+                  foregroundColor: AppTheme.backgroundDark,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 14,
+                  ),
+                ),
+              )
               .animate()
               .fadeIn(duration: 500.ms)
               .scale(begin: const Offset(0.8, 0.8), end: const Offset(1, 1)),

@@ -10,7 +10,7 @@ class ConnectionMap extends StatefulWidget {
   final String? serverCountry;
   final String? serverCity;
   final int? ping;
-  
+
   const ConnectionMap({
     super.key,
     required this.isConnected,
@@ -18,7 +18,7 @@ class ConnectionMap extends StatefulWidget {
     this.serverCity,
     this.ping,
   });
-  
+
   @override
   State<ConnectionMap> createState() => _ConnectionMapState();
 }
@@ -33,25 +33,26 @@ class _ConnectionMapState extends State<ConnectionMap>
   @override
   void initState() {
     super.initState();
-    
+
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     );
-    
+
     _lineController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2000),
     );
-    
+
     _pulseAnimation = Tween<double>(begin: 0.8, end: 1.2).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
-    
-    _lineAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _lineController, curve: Curves.easeOut),
-    );
-    
+
+    _lineAnimation = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _lineController, curve: Curves.easeOut));
+
     _updateAnimations();
   }
 
@@ -97,11 +98,8 @@ class _ConnectionMapState extends State<ConnectionMap>
       child: Stack(
         children: [
           // Background map grid
-          CustomPaint(
-            size: Size.infinite,
-            painter: MapGridPainter(),
-          ),
-          
+          CustomPaint(size: Size.infinite, painter: MapGridPainter()),
+
           // Connection visualization
           AnimatedBuilder(
             animation: Listenable.merge([_pulseAnimation, _lineAnimation]),
@@ -116,7 +114,7 @@ class _ConnectionMapState extends State<ConnectionMap>
               );
             },
           ),
-          
+
           // Location labels
           Positioned(
             left: 20,
@@ -129,7 +127,7 @@ class _ConnectionMapState extends State<ConnectionMap>
               isSource: true,
             ),
           ),
-          
+
           if (widget.isConnected)
             Positioned(
               right: 20,
@@ -142,11 +140,8 @@ class _ConnectionMapState extends State<ConnectionMap>
                 isSource: false,
                 ping: widget.ping,
               ),
-            )
-                .animate()
-                .fadeIn(duration: 500.ms)
-                .slideX(begin: 0.2, end: 0),
-          
+            ).animate().fadeIn(duration: 500.ms).slideX(begin: 0.2, end: 0),
+
           // Status indicator
           Positioned(
             top: 10,
@@ -154,7 +149,10 @@ class _ConnectionMapState extends State<ConnectionMap>
             right: 0,
             child: Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: widget.isConnected
                       ? AppTheme.primaryGreen.withValues(alpha: 0.15)
@@ -248,9 +246,14 @@ class _ConnectionMapState extends State<ConnectionMap>
                 if (ping != null) ...[
                   const SizedBox(width: 6),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 1,
+                    ),
                     decoration: BoxDecoration(
-                      color: AppTheme.getPingColor(ping).withValues(alpha: 0.15),
+                      color: AppTheme.getPingColor(
+                        ping,
+                      ).withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
@@ -284,12 +287,12 @@ class MapGridPainter extends CustomPainter {
     for (int i = 1; i < 5; i++) {
       final y = size.height * i / 5;
       final path = Path()..moveTo(0, y);
-      
+
       for (double x = 0; x <= size.width; x += 10) {
         final curveY = y + sin(x / size.width * pi) * 5;
         path.lineTo(x, curveY);
       }
-      
+
       canvas.drawPath(path, paint);
     }
 
@@ -312,10 +315,25 @@ class MapGridPainter extends CustomPainter {
     // Europe/Asia area
     final path1 = Path()
       ..moveTo(size.width * 0.3, size.height * 0.2)
-      ..quadraticBezierTo(size.width * 0.5, size.height * 0.15, size.width * 0.7, size.height * 0.25)
-      ..quadraticBezierTo(size.width * 0.8, size.height * 0.4, size.width * 0.6, size.height * 0.5)
-      ..quadraticBezierTo(size.width * 0.4, size.height * 0.45, size.width * 0.3, size.height * 0.2);
-    
+      ..quadraticBezierTo(
+        size.width * 0.5,
+        size.height * 0.15,
+        size.width * 0.7,
+        size.height * 0.25,
+      )
+      ..quadraticBezierTo(
+        size.width * 0.8,
+        size.height * 0.4,
+        size.width * 0.6,
+        size.height * 0.5,
+      )
+      ..quadraticBezierTo(
+        size.width * 0.4,
+        size.height * 0.45,
+        size.width * 0.3,
+        size.height * 0.2,
+      );
+
     canvas.drawPath(path1, landPaint);
 
     // Middle East/Iran area (highlighted)
@@ -325,9 +343,19 @@ class MapGridPainter extends CustomPainter {
 
     final iranPath = Path()
       ..moveTo(size.width * 0.15, size.height * 0.55)
-      ..quadraticBezierTo(size.width * 0.2, size.height * 0.45, size.width * 0.25, size.height * 0.55)
-      ..quadraticBezierTo(size.width * 0.22, size.height * 0.65, size.width * 0.15, size.height * 0.55);
-    
+      ..quadraticBezierTo(
+        size.width * 0.2,
+        size.height * 0.45,
+        size.width * 0.25,
+        size.height * 0.55,
+      )
+      ..quadraticBezierTo(
+        size.width * 0.22,
+        size.height * 0.65,
+        size.width * 0.15,
+        size.height * 0.55,
+      );
+
     canvas.drawPath(iranPath, iranPaint);
   }
 
@@ -351,7 +379,7 @@ class ConnectionPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     // Source point (Iran - bottom left)
     final sourcePoint = Offset(size.width * 0.18, size.height * 0.7);
-    
+
     // Destination point (Server - top right)
     final destPoint = Offset(size.width * 0.82, size.height * 0.25);
 
@@ -361,16 +389,21 @@ class ConnectionPainter extends CustomPainter {
     if (isConnected) {
       // Draw connection line
       _drawConnectionLine(canvas, sourcePoint, destPoint, lineProgress);
-      
+
       // Draw destination point
       _drawPulsingPoint(canvas, destPoint, AppTheme.primaryGreen, pulseValue);
-      
+
       // Draw data flow particles
       _drawDataParticles(canvas, sourcePoint, destPoint, lineProgress);
     }
   }
 
-  void _drawPulsingPoint(Canvas canvas, Offset point, Color color, double pulse) {
+  void _drawPulsingPoint(
+    Canvas canvas,
+    Offset point,
+    Color color,
+    double pulse,
+  ) {
     // Outer glow
     canvas.drawCircle(
       point,
@@ -391,18 +424,19 @@ class ConnectionPainter extends CustomPainter {
     );
 
     // Center point
-    canvas.drawCircle(
-      point,
-      4,
-      Paint()..color = color,
-    );
+    canvas.drawCircle(point, 4, Paint()..color = color);
   }
 
-  void _drawConnectionLine(Canvas canvas, Offset start, Offset end, double progress) {
+  void _drawConnectionLine(
+    Canvas canvas,
+    Offset start,
+    Offset end,
+    double progress,
+  ) {
     if (progress <= 0) return;
 
     final path = Path();
-    
+
     // Create curved path
     final controlPoint1 = Offset(
       start.dx + (end.dx - start.dx) * 0.3,
@@ -415,9 +449,12 @@ class ConnectionPainter extends CustomPainter {
 
     path.moveTo(start.dx, start.dy);
     path.cubicTo(
-      controlPoint1.dx, controlPoint1.dy,
-      controlPoint2.dx, controlPoint2.dy,
-      end.dx, end.dy,
+      controlPoint1.dx,
+      controlPoint1.dy,
+      controlPoint2.dx,
+      controlPoint2.dy,
+      end.dx,
+      end.dy,
     );
 
     // Get path metrics for partial drawing
@@ -452,21 +489,36 @@ class ConnectionPainter extends CustomPainter {
     final dashPaint = Paint()
       ..color = AppTheme.primaryGreen.withValues(alpha: 0.5)
       ..strokeWidth = 1
-      ..style = PaintingStyle.stroke;
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    const dashLength = 7.0;
+    const gapLength = 5.0;
 
-    // Create dashed effect using path effect
-    // This is a simplified version
+    for (final metric in path.computeMetrics()) {
+      for (
+        var distance = 0.0;
+        distance < metric.length;
+        distance += dashLength + gapLength
+      ) {
+        final end = min(distance + dashLength, metric.length);
+        canvas.drawPath(metric.extractPath(distance, end), dashPaint);
+      }
+    }
   }
 
-  void _drawDataParticles(Canvas canvas, Offset start, Offset end, double progress) {
+  void _drawDataParticles(
+    Canvas canvas,
+    Offset start,
+    Offset end,
+    double progress,
+  ) {
     if (progress < 0.5) return;
 
-    final random = Random(42);
-    final particleCount = 5;
+    const particleCount = 5;
 
     for (int i = 0; i < particleCount; i++) {
       final t = ((progress * 2 - 1 + i * 0.2) % 1);
-      
+
       // Calculate position along curve
       final x = start.dx + (end.dx - start.dx) * t;
       final y = start.dy + (end.dy - start.dy) * t - sin(t * pi) * 30;
@@ -482,8 +534,8 @@ class ConnectionPainter extends CustomPainter {
   @override
   bool shouldRepaint(ConnectionPainter oldDelegate) {
     return oldDelegate.pulseValue != pulseValue ||
-           oldDelegate.lineProgress != lineProgress ||
-           oldDelegate.isConnected != isConnected;
+        oldDelegate.lineProgress != lineProgress ||
+        oldDelegate.isConnected != isConnected;
   }
 }
 
@@ -492,36 +544,42 @@ class ConnectionMapWidget extends StatelessWidget {
   final String serverAddress;
   final bool isConnected;
   final Color? primaryColor;
-  
+
   const ConnectionMapWidget({
     super.key,
     required this.serverAddress,
     required this.isConnected,
     this.primaryColor,
   });
-  
+
   @override
   Widget build(BuildContext context) {
     // Extract country from server address (simplified)
     String? country;
     if (serverAddress.contains('de') || serverAddress.contains('germany')) {
       country = 'Germany';
-    } else if (serverAddress.contains('us') || serverAddress.contains('america')) {
+    } else if (serverAddress.contains('us') ||
+        serverAddress.contains('america')) {
       country = 'United States';
-    } else if (serverAddress.contains('nl') || serverAddress.contains('netherlands')) {
+    } else if (serverAddress.contains('nl') ||
+        serverAddress.contains('netherlands')) {
       country = 'Netherlands';
-    } else if (serverAddress.contains('uk') || serverAddress.contains('london')) {
+    } else if (serverAddress.contains('uk') ||
+        serverAddress.contains('london')) {
       country = 'United Kingdom';
-    } else if (serverAddress.contains('fr') || serverAddress.contains('france')) {
+    } else if (serverAddress.contains('fr') ||
+        serverAddress.contains('france')) {
       country = 'France';
-    } else if (serverAddress.contains('jp') || serverAddress.contains('japan')) {
+    } else if (serverAddress.contains('jp') ||
+        serverAddress.contains('japan')) {
       country = 'Japan';
-    } else if (serverAddress.contains('sg') || serverAddress.contains('singapore')) {
+    } else if (serverAddress.contains('sg') ||
+        serverAddress.contains('singapore')) {
       country = 'Singapore';
     } else {
       country = 'Unknown';
     }
-    
+
     return ConnectionMap(
       isConnected: isConnected,
       serverCountry: country,

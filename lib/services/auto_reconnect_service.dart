@@ -1,43 +1,44 @@
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+
 import '../models/vpn_config.dart';
 import 'vpn_service.dart';
 
-/// Auto-Reconnect & Failover Service with Persistent Settings
-/// Automatically reconnects when connection drops and switches to next server
+/// Recovery policy for unexpected tunnel failures.
+///
+/// A user initiated disconnect is never retried. Automatic recovery starts only
+/// after the app has observed a successful connection in the current session.
 class AutoReconnectService extends ChangeNotifier {
-  static final AutoReconnectService _instance = AutoReconnectService._internal();
+  static final AutoReconnectService _instance =
+      AutoReconnectService._internal();
   factory AutoReconnectService() => _instance;
   AutoReconnectService._internal();
 
-  static const String _boxName = 'auto_reconnect_settings';
-  Box? _settingsBox;
-  bool _isInitialized = false;
+  static const _boxName = 'auto_reconnect_settings';
+  Box<dynamic>? _settingsBox;
+  VpnService? _vpnService;
+  void Function(VpnConfig config)? _onFailover;
 
-  final VpnService _vpnService = VpnService();
-  
-  // Settings (persisted)
+  bool _isInitialized = false;
   bool _enabled = true;
+  bool _autoFailover = true;
   int _maxRetries = 3;
   int _retryDelaySeconds = 5;
   int _healthCheckIntervalSeconds = 30;
-  bool _autoFailover = true;
-  
-  // State (not persisted)
-  int _currentRetryCount = 0;
-  Timer? _healthCheckTimer;
-  Timer? _reconnectTimer;
-  List<VpnConfig> _serverQueue = [];
-  int _currentServerIndex = 0;
+
+  bool _hasConnectedThisSession = false;
+  bool _userDisconnectPending = false;
   bool _isReconnecting = false;
-  DateTime? _lastDisconnectTime;
-  
-  // Stats (not persisted)
+  int _currentRetryCount = 0;
   int _totalReconnects = 0;
   int _totalFailovers = 0;
-  
-  // Getters
+  int _currentServerIndex = 0;
+  List<VpnConfig> _serverQueue = <VpnConfig>[];
+  Timer? _reconnectTimer;
+  Timer? _healthCheckTimer;
+
   bool get isInitialized => _isInitialized;
   bool get isEnabled => _enabled;
   bool get enabled => _enabled;
@@ -45,339 +46,238 @@ class AutoReconnectService extends ChangeNotifier {
   int get currentRetryCount => _currentRetryCount;
   int get totalReconnects => _totalReconnects;
   int get totalFailovers => _totalFailovers;
-  String get currentServerName => _serverQueue.isNotEmpty && _currentServerIndex < _serverQueue.length
-      ? _serverQueue[_currentServerIndex].name
-      : 'None';
+  Duration get reconnectDelay => Duration(seconds: _retryDelaySeconds);
+  int get maxRetries => _maxRetries;
+  String get currentServerName => _serverQueue.isEmpty
+      ? 'None'
+      : _serverQueue[_currentServerIndex.clamp(0, _serverQueue.length - 1)]
+            .name;
 
-  /// Initialize Hive storage and load settings
   Future<void> initializeStorage() async {
     if (_isInitialized) return;
-    
-    try {
-      _settingsBox = await Hive.openBox(_boxName);
-      _loadSettings();
-      _isInitialized = true;
-      
-      if (kDebugMode) {
-        debugPrint('[AutoReconnect] Storage initialized');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('[AutoReconnect] Failed to initialize storage: $e');
-      }
-    }
+    _settingsBox = await Hive.openBox<dynamic>(_boxName);
+    _enabled = _settingsBox!.get('enabled', defaultValue: true) as bool;
+    _autoFailover =
+        _settingsBox!.get('autoFailover', defaultValue: true) as bool;
+    _maxRetries = _settingsBox!.get('maxRetries', defaultValue: 3) as int;
+    _retryDelaySeconds =
+        _settingsBox!.get('retryDelaySeconds', defaultValue: 5) as int;
+    _healthCheckIntervalSeconds =
+        _settingsBox!.get('healthCheckIntervalSeconds', defaultValue: 30)
+            as int;
+    _isInitialized = true;
   }
 
-  /// Load settings from Hive
-  void _loadSettings() {
-    if (_settingsBox == null) return;
-    
-    try {
-      _enabled = _settingsBox!.get('enabled', defaultValue: true);
-      _maxRetries = _settingsBox!.get('maxRetries', defaultValue: 3);
-      _retryDelaySeconds = _settingsBox!.get('retryDelaySeconds', defaultValue: 5);
-      _healthCheckIntervalSeconds = _settingsBox!.get('healthCheckIntervalSeconds', defaultValue: 30);
-      _autoFailover = _settingsBox!.get('autoFailover', defaultValue: true);
-      
-      if (kDebugMode) {
-        debugPrint('[AutoReconnect] Settings loaded: enabled=$_enabled, maxRetries=$_maxRetries, delay=$_retryDelaySeconds');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('[AutoReconnect] Error loading settings: $e');
-      }
-    }
-  }
-
-  /// Save settings to Hive
   Future<void> _saveSettings() async {
-    if (_settingsBox == null) return;
-    
-    try {
-      await _settingsBox!.put('enabled', _enabled);
-      await _settingsBox!.put('maxRetries', _maxRetries);
-      await _settingsBox!.put('retryDelaySeconds', _retryDelaySeconds);
-      await _settingsBox!.put('healthCheckIntervalSeconds', _healthCheckIntervalSeconds);
-      await _settingsBox!.put('autoFailover', _autoFailover);
-      
-      if (kDebugMode) {
-        debugPrint('[AutoReconnect] Settings saved');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('[AutoReconnect] Error saving settings: $e');
-      }
+    final box = _settingsBox;
+    if (box == null) return;
+    await box.putAll(<String, dynamic>{
+      'enabled': _enabled,
+      'autoFailover': _autoFailover,
+      'maxRetries': _maxRetries,
+      'retryDelaySeconds': _retryDelaySeconds,
+      'healthCheckIntervalSeconds': _healthCheckIntervalSeconds,
+    });
+  }
+
+  Future<void> initialize(
+    VpnService vpnService, {
+    void Function(VpnConfig config)? onFailover,
+  }) async {
+    await initializeStorage();
+    if (!identical(_vpnService, vpnService)) {
+      _vpnService?.removeListener(_onVpnStatusChanged);
+      _vpnService = vpnService;
+      _vpnService!.addListener(_onVpnStatusChanged);
     }
+    _onFailover = onFailover;
+    _restartHealthCheck();
   }
 
-  /// Enable/disable auto-reconnect
-  void setEnabled(bool value) {
-    _enabled = value;
-    _saveSettings();
-    if (!value) {
-      stopMonitoring();
+  void setServerQueue(List<VpnConfig> servers, {String? activeConfigId}) {
+    _serverQueue = List<VpnConfig>.from(servers);
+    if (_serverQueue.isEmpty) {
+      _currentServerIndex = 0;
+    } else if (activeConfigId != null) {
+      final index = _serverQueue.indexWhere(
+        (config) => config.id == activeConfigId,
+      );
+      _currentServerIndex = index >= 0 ? index : 0;
+    } else {
+      _currentServerIndex = _currentServerIndex.clamp(
+        0,
+        _serverQueue.length - 1,
+      );
     }
     notifyListeners();
   }
 
-  /// Set max retries before failover
-  void setMaxRetries(int value) {
-    _maxRetries = value;
-    _saveSettings();
-    notifyListeners();
+  /// Must be called immediately before a user presses Disconnect.
+  void notifyUserDisconnecting() {
+    _userDisconnectPending = true;
+    _cancelRecovery(resetRetries: true);
   }
 
-  /// Get retry delay
-  Duration get reconnectDelay => Duration(seconds: _retryDelaySeconds);
-
-  /// Get max retries
-  int get maxRetries => _maxRetries;
-
-  /// Set retry delay in seconds
-  void setRetryDelay(int seconds) {
-    _retryDelaySeconds = seconds;
-    _saveSettings();
-    notifyListeners();
-  }
-
-  /// Set retry delay duration
-  void setReconnectDelay(Duration duration) {
-    _retryDelaySeconds = duration.inSeconds;
-    _saveSettings();
-    notifyListeners();
-  }
-
-  /// Set health check interval
-  void setHealthCheckInterval(int seconds) {
-    _healthCheckIntervalSeconds = seconds;
-    _saveSettings();
+  void setEnabled(bool enabled) {
+    _enabled = enabled;
+    unawaited(_saveSettings());
+    if (!enabled) _cancelRecovery(resetRetries: true);
     _restartHealthCheck();
     notifyListeners();
   }
 
-  /// Set server queue for failover
-  void setServerQueue(List<VpnConfig> servers) {
-    _serverQueue = List.from(servers);
-    _currentServerIndex = 0;
+  void setAutoFailover(bool enabled) {
+    _autoFailover = enabled;
+    unawaited(_saveSettings());
     notifyListeners();
   }
 
-  /// Initialize the service
-  void initialize(VpnService vpnService, dynamic configProvider) {
-    // Initialize storage first, then start monitoring
-    initializeStorage().then((_) {
-      startMonitoring();
-    });
+  void setMaxRetries(int value) {
+    _maxRetries = value.clamp(1, 10);
+    unawaited(_saveSettings());
+    notifyListeners();
   }
 
-  /// Start monitoring connection
-  void startMonitoring() {
-    if (!_enabled) return;
-    
-    _stopTimers();
-    
-    // Start health check timer
-    _healthCheckTimer = Timer.periodic(
-      Duration(seconds: _healthCheckIntervalSeconds),
-      (_) => _performHealthCheck(),
-    );
-    
-    // Listen to VPN status changes
-    _vpnService.addListener(_onVpnStatusChanged);
-    
-    if (kDebugMode) {
-      debugPrint('[AutoReconnect] Monitoring started');
+  void setRetryDelay(int seconds) {
+    _retryDelaySeconds = seconds.clamp(1, 60);
+    unawaited(_saveSettings());
+    notifyListeners();
+  }
+
+  void setReconnectDelay(Duration duration) =>
+      setRetryDelay(duration.inSeconds);
+
+  void setHealthCheckInterval(int seconds) {
+    _healthCheckIntervalSeconds = seconds.clamp(10, 300);
+    unawaited(_saveSettings());
+    _restartHealthCheck();
+    notifyListeners();
+  }
+
+  void _onVpnStatusChanged() {
+    final service = _vpnService;
+    if (service == null) return;
+
+    switch (service.status) {
+      case VpnStatus.connected:
+        _hasConnectedThisSession = true;
+        if (_isReconnecting) _totalReconnects++;
+        _cancelRecovery(resetRetries: true);
+        _restartHealthCheck();
+        notifyListeners();
+      case VpnStatus.disconnected:
+        if (_userDisconnectPending) {
+          _userDisconnectPending = false;
+          _hasConnectedThisSession = false;
+          _cancelRecovery(resetRetries: true);
+          notifyListeners();
+          return;
+        }
+        if (_hasConnectedThisSession) _scheduleRecovery();
+      case VpnStatus.error:
+        if (!_userDisconnectPending && _hasConnectedThisSession)
+          _scheduleRecovery();
+      case VpnStatus.connecting:
+      case VpnStatus.disconnecting:
+        break;
     }
-  }
-
-  /// Stop monitoring
-  void stopMonitoring() {
-    _stopTimers();
-    _vpnService.removeListener(_onVpnStatusChanged);
-    _isReconnecting = false;
-    _currentRetryCount = 0;
-    
-    if (kDebugMode) {
-      debugPrint('[AutoReconnect] Monitoring stopped');
-    }
-  }
-
-  void _stopTimers() {
-    _healthCheckTimer?.cancel();
-    _healthCheckTimer = null;
-    _reconnectTimer?.cancel();
-    _reconnectTimer = null;
   }
 
   void _restartHealthCheck() {
     _healthCheckTimer?.cancel();
-    if (_enabled) {
-      _healthCheckTimer = Timer.periodic(
-        Duration(seconds: _healthCheckIntervalSeconds),
-        (_) => _performHealthCheck(),
-      );
-    }
+    if (!_enabled || _vpnService == null) return;
+    _healthCheckTimer = Timer.periodic(
+      Duration(seconds: _healthCheckIntervalSeconds),
+      (_) => _performHealthCheck(),
+    );
   }
 
-  /// Handle VPN status changes
-  void _onVpnStatusChanged() {
-    if (!_enabled) return;
-    
-    final status = _vpnService.status;
-    
-    if (status == VpnStatus.disconnected && !_isReconnecting) {
-      // Unexpected disconnect - trigger reconnect
-      _lastDisconnectTime = DateTime.now();
-      _triggerReconnect();
-    } else if (status == VpnStatus.connected) {
-      // Successfully connected - reset counters
-      _currentRetryCount = 0;
-      _isReconnecting = false;
-      _reconnectTimer?.cancel();
-      
-      if (kDebugMode) {
-        debugPrint('[AutoReconnect] Connected successfully');
-      }
-    }
-  }
-
-  /// Perform health check
   Future<void> _performHealthCheck() async {
-    if (!_enabled || !_vpnService.isConnected) return;
-    
-    try {
-      final delay = await _vpnService.getConnectedServerDelay();
-      
-      if (delay < 0 || delay > 5000) {
-        // Connection seems unhealthy
-        if (kDebugMode) {
-          debugPrint('[AutoReconnect] Health check failed: delay=$delay');
-        }
-        _triggerReconnect();
-      } else {
-        if (kDebugMode) {
-          debugPrint('[AutoReconnect] Health check OK: delay=${delay}ms');
-        }
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('[AutoReconnect] Health check error: $e');
-      }
-    }
+    final service = _vpnService;
+    if (!_enabled || service == null || !service.isConnected || _isReconnecting)
+      return;
+    final delay = await service.getConnectedServerDelay();
+    if (delay < 0 || delay > 5000) _scheduleRecovery();
   }
 
-  /// Trigger reconnection attempt
-  void _triggerReconnect() {
-    if (_isReconnecting || !_enabled) return;
-    
+  void _scheduleRecovery() {
+    if (!_enabled || _isReconnecting || _userDisconnectPending) return;
+    final service = _vpnService;
+    if (service?.currentConfig == null && _serverQueue.isEmpty) return;
+
     _isReconnecting = true;
-    notifyListeners();
-    
-    if (kDebugMode) {
-      debugPrint('[AutoReconnect] Triggering reconnect (attempt ${_currentRetryCount + 1}/$_maxRetries)');
-    }
-    
-    _attemptReconnect();
-  }
-
-  /// Attempt to reconnect
-  Future<void> _attemptReconnect() async {
-    if (!_enabled) {
-      _isReconnecting = false;
-      return;
-    }
-    
-    _currentRetryCount++;
-    notifyListeners();
-    
-    // Check if we should failover to next server
-    if (_currentRetryCount > _maxRetries && _autoFailover) {
-      _performFailover();
-      return;
-    }
-    
-    // Get current config
-    VpnConfig? config;
-    if (_serverQueue.isNotEmpty && _currentServerIndex < _serverQueue.length) {
-      config = _serverQueue[_currentServerIndex];
-    } else {
-      config = _vpnService.currentConfig;
-    }
-    
-    if (config == null) {
-      if (kDebugMode) {
-        debugPrint('[AutoReconnect] No config available for reconnect');
-      }
-      _isReconnecting = false;
-      notifyListeners();
-      return;
-    }
-    
-    // Wait before retry
-    _reconnectTimer = Timer(Duration(seconds: _retryDelaySeconds), () async {
-      if (!_enabled) return;
-      
-      final success = await _vpnService.connect(config!);
-      
-      if (success) {
-        _totalReconnects++;
-        _currentRetryCount = 0;
-        _isReconnecting = false;
-        notifyListeners();
-        
-        if (kDebugMode) {
-          debugPrint('[AutoReconnect] Reconnected successfully');
-        }
-      } else {
-        // Retry again
-        _attemptReconnect();
-      }
-    });
-  }
-
-  /// Failover to next server
-  void _performFailover() {
-    if (!_autoFailover || _serverQueue.isEmpty) {
-      _isReconnecting = false;
-      _currentRetryCount = 0;
-      notifyListeners();
-      return;
-    }
-    
-    _currentServerIndex++;
-    if (_currentServerIndex >= _serverQueue.length) {
-      _currentServerIndex = 0; // Loop back to first server
-    }
-    
     _currentRetryCount = 0;
-    _totalFailovers++;
-    
-    if (kDebugMode) {
-      debugPrint('[AutoReconnect] Failover to server: ${_serverQueue[_currentServerIndex].name}');
-    }
-    
+    _attemptReconnect();
     notifyListeners();
+  }
+
+  void _attemptReconnect() {
+    if (!_enabled || _userDisconnectPending) {
+      _cancelRecovery(resetRetries: true);
+      return;
+    }
+
+    if (_currentRetryCount >= _maxRetries) {
+      if (!_moveToNextServer()) {
+        _cancelRecovery(resetRetries: true);
+        return;
+      }
+      _currentRetryCount = 0;
+    }
+
+    final service = _vpnService;
+    final config = _serverQueue.isNotEmpty
+        ? _serverQueue[_currentServerIndex]
+        : service?.currentConfig;
+    if (service == null || config == null) {
+      _cancelRecovery(resetRetries: true);
+      return;
+    }
+
+    _currentRetryCount++;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(Duration(seconds: _retryDelaySeconds), () async {
+      if (!_enabled || _userDisconnectPending) return;
+      final started = await service.connect(config);
+      if (!started) _attemptReconnect();
+    });
+    notifyListeners();
+  }
+
+  bool _moveToNextServer() {
+    if (!_autoFailover || _serverQueue.length < 2) return false;
+    _currentServerIndex = (_currentServerIndex + 1) % _serverQueue.length;
+    _totalFailovers++;
+    _onFailover?.call(_serverQueue[_currentServerIndex]);
+    return true;
+  }
+
+  Future<void> manualFailover() async {
+    final service = _vpnService;
+    if (service == null || !_moveToNextServer()) return;
+    _userDisconnectPending = true;
+    await service.disconnect();
+    _userDisconnectPending = false;
+    _isReconnecting = true;
+    _currentRetryCount = 0;
     _attemptReconnect();
   }
 
-  /// Manually trigger failover to next server
-  Future<void> manualFailover() async {
-    if (_serverQueue.isEmpty) return;
-    
-    await _vpnService.disconnect();
-    _performFailover();
+  void _cancelRecovery({required bool resetRetries}) {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _isReconnecting = false;
+    if (resetRetries) _currentRetryCount = 0;
   }
 
-  /// Get reconnect status text
   String getStatusText() {
     if (!_enabled) return 'Auto-reconnect disabled';
     if (_isReconnecting) {
-      return 'Reconnecting... (attempt $_currentRetryCount/$_maxRetries)';
+      return 'Recovering connection (attempt $_currentRetryCount/$_maxRetries)';
     }
-    return 'Monitoring active';
+    return 'Connection monitoring active';
   }
 
-  /// Reset all stats
   void resetStats() {
     _totalReconnects = 0;
     _totalFailovers = 0;
@@ -386,24 +286,9 @@ class AutoReconnectService extends ChangeNotifier {
 
   @override
   void dispose() {
-    stopMonitoring();
+    _healthCheckTimer?.cancel();
+    _cancelRecovery(resetRetries: true);
+    _vpnService?.removeListener(_onVpnStatusChanged);
     super.dispose();
   }
-}
-
-/// Reconnect event for logging
-class ReconnectEvent {
-  final DateTime timestamp;
-  final String serverName;
-  final bool success;
-  final int attempt;
-  final String? errorMessage;
-
-  ReconnectEvent({
-    required this.timestamp,
-    required this.serverName,
-    required this.success,
-    required this.attempt,
-    this.errorMessage,
-  });
 }

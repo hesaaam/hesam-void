@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -11,29 +10,30 @@ class SpeedGraph extends StatefulWidget {
   final VpnStats stats;
   final bool isConnected;
   final double height;
-  
+
   const SpeedGraph({
     super.key,
     required this.stats,
     required this.isConnected,
     this.height = 150,
   });
-  
+
   @override
   State<SpeedGraph> createState() => _SpeedGraphState();
 }
 
-class _SpeedGraphState extends State<SpeedGraph> with SingleTickerProviderStateMixin {
+class _SpeedGraphState extends State<SpeedGraph>
+    with SingleTickerProviderStateMixin {
   late AnimationController _waveController;
-  
+
   // Speed history (last 60 data points)
   final List<double> _downloadHistory = List.filled(60, 0);
   final List<double> _uploadHistory = List.filled(60, 0);
-  
+
   // Peak speeds
   double _peakDownload = 0;
   double _peakUpload = 0;
-  
+
   @override
   void initState() {
     super.initState();
@@ -46,15 +46,15 @@ class _SpeedGraphState extends State<SpeedGraph> with SingleTickerProviderStateM
   @override
   void didUpdateWidget(SpeedGraph oldWidget) {
     super.didUpdateWidget(oldWidget);
-    
+
     // Add new data points
     if (widget.isConnected) {
       _downloadHistory.removeAt(0);
       _downloadHistory.add(widget.stats.downloadSpeed.toDouble());
-      
+
       _uploadHistory.removeAt(0);
       _uploadHistory.add(widget.stats.uploadSpeed.toDouble());
-      
+
       // Update peaks
       if (widget.stats.downloadSpeed > _peakDownload) {
         _peakDownload = widget.stats.downloadSpeed.toDouble();
@@ -80,7 +80,7 @@ class _SpeedGraphState extends State<SpeedGraph> with SingleTickerProviderStateM
         color: AppTheme.backgroundCard,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: widget.isConnected 
+          color: widget.isConnected
               ? AppTheme.primaryGreen.withValues(alpha: 0.3)
               : AppTheme.backgroundElevated,
         ),
@@ -106,9 +106,9 @@ class _SpeedGraphState extends State<SpeedGraph> with SingleTickerProviderStateM
               ),
             ],
           ),
-          
+
           const SizedBox(height: 12),
-          
+
           // Graph area
           Expanded(
             child: AnimatedBuilder(
@@ -128,9 +128,7 @@ class _SpeedGraphState extends State<SpeedGraph> with SingleTickerProviderStateM
           ),
         ],
       ),
-    )
-        .animate(target: widget.isConnected ? 1 : 0)
-        .fadeIn(duration: 400.ms);
+    ).animate(target: widget.isConnected ? 1 : 0).fadeIn(duration: 400.ms);
   }
 
   Widget _buildSpeedIndicator({
@@ -220,7 +218,8 @@ class _SpeedGraphState extends State<SpeedGraph> with SingleTickerProviderStateM
 
   String _formatSpeed(int bytesPerSec) {
     if (bytesPerSec < 1024) return '$bytesPerSec B/s';
-    if (bytesPerSec < 1024 * 1024) return '${(bytesPerSec / 1024).toStringAsFixed(0)} KB/s';
+    if (bytesPerSec < 1024 * 1024)
+      return '${(bytesPerSec / 1024).toStringAsFixed(0)} KB/s';
     return '${(bytesPerSec / (1024 * 1024)).toStringAsFixed(1)} MB/s';
   }
 }
@@ -316,15 +315,15 @@ class SpeedGraphPainter extends CustomPainter {
     for (int i = 1; i < history.length; i++) {
       final x = i * pointWidth;
       final y = size.height - (history[i] / maxValue * size.height);
-      
+
       // Use quadratic bezier for smooth curves
       final prevX = (i - 1) * pointWidth;
       final prevY = size.height - (history[i - 1] / maxValue * size.height);
       final midX = (prevX + x) / 2;
-      
+
       path.quadraticBezierTo(prevX, prevY, midX, (prevY + y) / 2);
       fillPath.quadraticBezierTo(prevX, prevY, midX, (prevY + y) / 2);
-      
+
       if (i == history.length - 1) {
         path.lineTo(x, y);
         fillPath.lineTo(x, y);
@@ -340,10 +339,7 @@ class SpeedGraphPainter extends CustomPainter {
       ..shader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
-        colors: [
-          color.withValues(alpha: 0.3),
-          color.withValues(alpha: 0.0),
-        ],
+        colors: [color.withValues(alpha: 0.3), color.withValues(alpha: 0.0)],
       ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
     canvas.drawPath(fillPath, fillPaint);
 
@@ -367,10 +363,10 @@ class SpeedGraphPainter extends CustomPainter {
     if (history.isNotEmpty) {
       final lastX = size.width;
       final lastY = size.height - (history.last / maxValue * size.height);
-      
+
       // Pulsing effect
       final pulseRadius = 4 + sin(animationValue * 2 * pi) * 2;
-      
+
       canvas.drawCircle(
         Offset(lastX, lastY),
         pulseRadius + 2,
@@ -393,12 +389,12 @@ class SpeedGraphPainter extends CustomPainter {
     // Draw flat line
     final y = size.height / 2;
     final path = Path()..moveTo(0, y);
-    
+
     for (double x = 0; x < size.width; x += 10) {
       final waveY = y + sin((x / size.width + animationValue) * 2 * pi) * 5;
       path.lineTo(x, waveY);
     }
-    
+
     canvas.drawPath(path, paint);
 
     // Draw "Disconnected" text
@@ -427,8 +423,8 @@ class SpeedGraphPainter extends CustomPainter {
   @override
   bool shouldRepaint(SpeedGraphPainter oldDelegate) {
     return oldDelegate.animationValue != animationValue ||
-           oldDelegate.downloadHistory != downloadHistory ||
-           oldDelegate.uploadHistory != uploadHistory;
+        oldDelegate.downloadHistory != downloadHistory ||
+        oldDelegate.uploadHistory != uploadHistory;
   }
 }
 
@@ -437,14 +433,14 @@ class SpeedGraphWidget extends StatefulWidget {
   final VpnService vpnService;
   final Color? primaryColor;
   final Color? backgroundColor;
-  
+
   const SpeedGraphWidget({
     super.key,
     required this.vpnService,
     this.primaryColor,
     this.backgroundColor,
   });
-  
+
   @override
   State<SpeedGraphWidget> createState() => _SpeedGraphWidgetState();
 }
@@ -455,17 +451,17 @@ class _SpeedGraphWidgetState extends State<SpeedGraphWidget> {
     super.initState();
     widget.vpnService.addListener(_onVpnChanged);
   }
-  
+
   void _onVpnChanged() {
     if (mounted) setState(() {});
   }
-  
+
   @override
   void dispose() {
     widget.vpnService.removeListener(_onVpnChanged);
     super.dispose();
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -481,10 +477,13 @@ class _SpeedGraphWidgetState extends State<SpeedGraphWidget> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            color: (widget.backgroundColor ?? AppTheme.backgroundCard).withValues(alpha: 0.5),
+            color: (widget.backgroundColor ?? AppTheme.backgroundCard)
+                .withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: (widget.primaryColor ?? AppTheme.primaryGreen).withValues(alpha: 0.2),
+              color: (widget.primaryColor ?? AppTheme.primaryGreen).withValues(
+                alpha: 0.2,
+              ),
             ),
           ),
           child: Row(
@@ -525,7 +524,12 @@ class _SpeedGraphWidgetState extends State<SpeedGraphWidget> {
     );
   }
 
-  Widget _buildMiniStat(String label, String value, IconData icon, Color color) {
+  Widget _buildMiniStat(
+    String label,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -563,13 +567,13 @@ class _SpeedGraphWidgetState extends State<SpeedGraphWidget> {
 class MiniSpeedIndicator extends StatelessWidget {
   final int downloadSpeed;
   final int uploadSpeed;
-  
+
   const MiniSpeedIndicator({
     super.key,
     required this.downloadSpeed,
     required this.uploadSpeed,
   });
-  
+
   @override
   Widget build(BuildContext context) {
     return Row(
@@ -597,10 +601,11 @@ class MiniSpeedIndicator extends StatelessWidget {
       ],
     );
   }
-  
+
   String _formatSpeed(int bytesPerSec) {
     if (bytesPerSec < 1024) return '${bytesPerSec}B';
-    if (bytesPerSec < 1024 * 1024) return '${(bytesPerSec / 1024).toStringAsFixed(0)}K';
+    if (bytesPerSec < 1024 * 1024)
+      return '${(bytesPerSec / 1024).toStringAsFixed(0)}K';
     return '${(bytesPerSec / (1024 * 1024)).toStringAsFixed(1)}M';
   }
 }

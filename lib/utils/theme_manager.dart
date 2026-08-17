@@ -184,7 +184,10 @@ class ThemeManager extends ChangeNotifier {
 
   AppThemeData get currentTheme => _currentTheme;
   List<AppThemeData> get customThemes => _customThemes;
-  List<AppThemeData> get allThemes => [...PredefinedThemes.all, ..._customThemes];
+  List<AppThemeData> get allThemes => [
+    ...PredefinedThemes.all,
+    ..._customThemes,
+  ];
 
   /// Initialize Theme Manager
   Future<void> initialize() async {
@@ -195,7 +198,8 @@ class ThemeManager extends ChangeNotifier {
 
   /// Load saved theme
   Future<void> _loadTheme() async {
-    final themeId = _box?.get(_themeKey, defaultValue: 'terminal_green') as String?;
+    final themeId =
+        _box?.get(_themeKey, defaultValue: 'terminal_green') as String?;
     if (themeId != null) {
       _currentTheme = allThemes.firstWhere(
         (t) => t.id == themeId,
@@ -209,7 +213,9 @@ class ThemeManager extends ChangeNotifier {
     final customData = _box?.get(_customThemesKey) as List<dynamic>?;
     if (customData != null) {
       _customThemes = customData
-          .map((e) => AppThemeData.fromJson(Map<String, dynamic>.from(e as Map)))
+          .map(
+            (e) => AppThemeData.fromJson(Map<String, dynamic>.from(e as Map)),
+          )
           .toList();
     }
   }
@@ -259,8 +265,12 @@ class ThemeManager extends ChangeNotifier {
       name: name,
       primaryColor: primaryColor,
       secondaryColor: secondaryColor ?? primaryColor.withValues(alpha: 0.8),
-      backgroundColor: backgroundColor ?? (isDark ? const Color(0xFF0D0D0D) : const Color(0xFFFAFAFA)),
-      surfaceColor: surfaceColor ?? (isDark ? const Color(0xFF1A1A1A) : const Color(0xFFFFFFFF)),
+      backgroundColor:
+          backgroundColor ??
+          (isDark ? const Color(0xFF0D0D0D) : const Color(0xFFFAFAFA)),
+      surfaceColor:
+          surfaceColor ??
+          (isDark ? const Color(0xFF1A1A1A) : const Color(0xFFFFFFFF)),
       textColor: textColor ?? (isDark ? primaryColor : const Color(0xFF212121)),
       accentColor: primaryColor,
       brightness: isDark ? Brightness.dark : Brightness.light,
@@ -270,7 +280,7 @@ class ThemeManager extends ChangeNotifier {
   /// Convert AppThemeData to Flutter ThemeData
   ThemeData toThemeData(AppThemeData appTheme) {
     final isDark = appTheme.brightness == Brightness.dark;
-    
+
     return ThemeData(
       useMaterial3: true,
       brightness: appTheme.brightness,
@@ -292,9 +302,7 @@ class ThemeManager extends ChangeNotifier {
         elevation: 4,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: appTheme.primaryColor.withValues(alpha: 0.3),
-          ),
+          side: BorderSide(color: appTheme.primaryColor.withValues(alpha: 0.3)),
         ),
       ),
       appBarTheme: AppBarTheme(

@@ -7,58 +7,55 @@ class AppTheme {
   static const Color darkGreen = Color(0xFF00CC33);
   static const Color lightGreen = Color(0xFF39FF14);
   static const Color matrixGreen = Color(0xFF00FF00);
-  
+
   // Background Colors
   static const Color backgroundDark = Color(0xFF0A0A0A);
   static const Color backgroundCard = Color(0xFF121212);
   static const Color backgroundElevated = Color(0xFF1A1A1A);
   static const Color backgroundSurface = Color(0xFF0D0D0D);
-  
+
   // Accent Colors
   static const Color accentCyan = Color(0xFF00D9FF);
   static const Color accentPurple = Color(0xFF9D00FF);
   static const Color accentRed = Color(0xFFFF0040);
   static const Color accentOrange = Color(0xFFFF6B00);
   static const Color accentYellow = Color(0xFFFFD700);
-  
+
   // Text Colors
   static const Color textPrimary = Color(0xFFE0E0E0);
   static const Color textSecondary = Color(0xFF9E9E9E);
   static const Color textMuted = Color(0xFF616161);
   static const Color textGreen = primaryGreen;
-  
+
   // Status Colors
   static const Color statusExcellent = Color(0xFF00FF41);
   static const Color statusGood = Color(0xFF7CFC00);
   static const Color statusFair = Color(0xFFFFD700);
   static const Color statusPoor = Color(0xFFFF4500);
   static const Color statusUnknown = Color(0xFF808080);
-  
+
   // Protocol Colors
   static const Color protocolVless = Color(0xFF00FF41);
   static const Color protocolVmess = Color(0xFF00D9FF);
   static const Color protocolTrojan = Color(0xFFFF6B00);
   static const Color protocolShadowsocks = Color(0xFF9D00FF);
   static const Color protocolSsh = Color(0xFFFFD700); // Golden color for SSH
-  
+
   // Gradients
   static const LinearGradient primaryGradient = LinearGradient(
     colors: [primaryGreen, darkGreen],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
-  
+
   static const LinearGradient cardGradient = LinearGradient(
     colors: [backgroundCard, backgroundElevated],
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
   );
-  
+
   static const LinearGradient glowGradient = LinearGradient(
-    colors: [
-      Color(0x4000FF41),
-      Color(0x0000FF41),
-    ],
+    colors: [Color(0x4000FF41), Color(0x0000FF41)],
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
   );
@@ -80,7 +77,7 @@ class AppTheme {
         onSurface: textPrimary,
         onError: textPrimary,
       ),
-      
+
       // AppBar Theme
       appBarTheme: const AppBarTheme(
         backgroundColor: backgroundDark,
@@ -95,7 +92,7 @@ class AppTheme {
         ),
         iconTheme: IconThemeData(color: primaryGreen),
       ),
-      
+
       // Card Theme
       cardTheme: CardThemeData(
         color: backgroundCard,
@@ -105,7 +102,7 @@ class AppTheme {
           side: const BorderSide(color: Color(0xFF2A2A2A), width: 1),
         ),
       ),
-      
+
       // Floating Action Button Theme
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
         backgroundColor: primaryGreen,
@@ -113,13 +110,10 @@ class AppTheme {
         elevation: 8,
         shape: CircleBorder(),
       ),
-      
+
       // Icon Theme
-      iconTheme: const IconThemeData(
-        color: primaryGreen,
-        size: 24,
-      ),
-      
+      iconTheme: const IconThemeData(color: primaryGreen, size: 24),
+
       // Text Theme
       textTheme: const TextTheme(
         displayLarge: TextStyle(
@@ -182,7 +176,7 @@ class AppTheme {
           letterSpacing: 1.2,
         ),
       ),
-      
+
       // Input Decoration Theme
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
@@ -202,7 +196,7 @@ class AppTheme {
         hintStyle: const TextStyle(color: textMuted),
         labelStyle: const TextStyle(color: textSecondary),
       ),
-      
+
       // Elevated Button Theme
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
@@ -221,7 +215,7 @@ class AppTheme {
           ),
         ),
       ),
-      
+
       // Outlined Button Theme
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
@@ -239,7 +233,7 @@ class AppTheme {
           ),
         ),
       ),
-      
+
       // Bottom Navigation Bar Theme
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(
         backgroundColor: backgroundCard,
@@ -257,7 +251,7 @@ class AppTheme {
           fontSize: 12,
         ),
       ),
-      
+
       // Snackbar Theme
       snackBarTheme: SnackBarThemeData(
         backgroundColor: backgroundElevated,
@@ -271,7 +265,7 @@ class AppTheme {
         ),
         behavior: SnackBarBehavior.floating,
       ),
-      
+
       // Dialog Theme
       dialogTheme: DialogThemeData(
         backgroundColor: backgroundCard,
@@ -286,7 +280,7 @@ class AppTheme {
           color: primaryGreen,
         ),
       ),
-      
+
       // Divider Theme
       dividerTheme: const DividerThemeData(
         color: Color(0xFF2A2A2A),
@@ -329,7 +323,10 @@ class AppTheme {
   }
 
   /// Box decoration with glow effect
-  static BoxDecoration glowingBox({Color color = primaryGreen, double blur = 20}) {
+  static BoxDecoration glowingBox({
+    Color color = primaryGreen,
+    double blur = 20,
+  }) {
     return BoxDecoration(
       borderRadius: BorderRadius.circular(16),
       border: Border.all(color: color.withValues(alpha: 0.5), width: 1),

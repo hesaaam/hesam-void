@@ -1,245 +1,76 @@
-# Hesam Void - Professional VPN Client
+# Hesam Void
 
-<p align="center">
-  <img src="assets/icons/app_icon.png" width="120" alt="Hesam Void Logo">
-</p>
+> **A local-first Android connection navigator for user-owned VPN and SSH configurations.**
 
-<p align="center">
-  <strong>A powerful, secure, and beautifully designed VPN client for Android</strong>
-</p>
+Hesam Void is an Android client for people who manage their own proxy and SSH profiles. It imports supported configuration links, establishes a device VPN tunnel through Xray or SSH/SOCKS, and helps the user make a transparent, on-device decision about which profile is most reliable right now.
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Version-3.0.0-green" alt="Version">
-  <img src="https://img.shields.io/badge/Flutter-3.35.4-02569B?logo=flutter" alt="Flutter">
-  <img src="https://img.shields.io/badge/Dart-3.9.2-0175C2?logo=dart" alt="Dart">
-  <img src="https://img.shields.io/badge/Xray_Core-25.3.6-green" alt="Xray Core">
-  <img src="https://img.shields.io/badge/License-MIT-blue" alt="License">
-  <img src="https://img.shields.io/badge/Platform-Android-3DDC84?logo=android" alt="Platform">
-</p>
+The goal of version 4 is simple: **make every visible control meaningful**. The app does not sell VPN servers, require an account, upload raw configuration URLs, or make guaranteed availability claims.
 
----
+## What makes v4 different
 
-## What's New in v3.0.0
+| Capability | What the user gets | What stays local |
+|---|---|---|
+| **Connection Navigator** | A 0–100 profile health score, a `Best now` recommendation, and a readable explanation based on success, latency, recency and unexpected drops. | Connection events, latency results and profile ranking. |
+| **Reliable recovery** | Auto-reconnect distinguishes a manual disconnect from an unexpected failure. A user-selected server queue can fail over after the configured retry budget. | Retry policy and profile order. |
+| **Real profile import** | Clipboard import, manual entry and QR-camera scanning validate supported configuration URLs before import. | All scanned and imported content. |
+| **Real app routing** | Android launchable apps are listed from the device; selected bypass policies are passed to the VPN engine immediately before connection. | Installed-app list and route policy. |
+| **Hardened SSH gateway** | A loopback-only SOCKS5 server is backed by one SSH session, with direct SSH, TLS and WebSocket transports, per-request forwarding and safe cleanup. | SSH host, username, password and tunnel traffic metadata. |
+| **Encrypted profile store** | Profile and app-setting boxes use AES-256 encryption. The encryption key is generated on-device and stored through the platform secure-storage provider. | Configuration URLs, SSH credentials and app settings. |
 
-### Advanced Features
-- **Smart Config Optimizer**: Auto-optimize MTU, buffer size, DNS for better speed
-- **Fragment/Noise Injection**: DPI bypass techniques for strict networks (Iran)
-- **Auto-Reconnect & Failover**: Automatic reconnection with server switching
-- **Multi-Server Load Balancing**: Distribute traffic across multiple servers
+## Supported configuration formats
 
-### Enhanced UI/UX
-- **Real-time Speed Graph**: Live animated upload/download graph with 60s history
-- **Connection Map**: Visual server connection with animated path
-- **Theme System**: 8 beautiful themes (Terminal Green, Cyberpunk Purple, Ocean Blue, Blood Red, Neon Orange, Electric Teal, Midnight Gold, Clean White)
-- **Haptic Feedback**: Satisfying vibration on connect/disconnect and UI interactions
-- **Split Tunneling**: Choose which apps use VPN (bypass games, local apps)
+| Family | Import | Tunnel mode | Notes |
+|---|---:|---:|---|
+| VLESS, including Reality | Yes | Xray VPN | Uses the `flutter_v2ray` engine integration. |
+| VMess | Yes | Xray VPN | Standard encoded VMess links are supported. |
+| Trojan | Yes | Xray VPN | Standard Trojan links are supported. |
+| Shadowsocks | Yes | Xray VPN | SIP002 and legacy credential encodings are parsed. |
+| NPVT SSH / SSH | Yes | SSH → loopback SOCKS5 → Xray VPN | Direct SSH, SSH over TLS and SSH over WebSocket are supported. |
+| SSH over SlowDNS | Import preserved | Not connected in v4 | The app reports this transport as unsupported rather than silently falling back to direct SSH. |
 
----
+## Connection Navigator
 
-## Features
+The Navigator is intentionally **rule-based and explainable**. It is not a black-box model and it does not claim to detect a user’s network environment. For each profile, the score considers successful local checks, recently measured latency, score freshness and unexpected tunnel drops. When no local evidence exists, the app shows `Needs a first check` instead of pretending that a profile is healthy.
 
-### Core VPN
-- **Multi-Protocol Support**: VLESS, VMess, Trojan, Shadowsocks
-- **Reality Protocol**: Full support for VLESS + Reality (best for Iran)
-- **Bypass Subnets**: Local network traffic bypass (10.x, 192.168.x, 172.x)
-- **Secure Storage**: Encrypted local storage with Hive
+Use `Best now` to select the strongest locally observed profile. Selection does not start a tunnel automatically; the user remains in control of the final connect action.
 
-### Config Management
-- **QR Code**: Import/Export configs via QR code
-- **Clipboard Support**: Quick import from clipboard
-- **Ping Test**: Measure server latency
-- **Sorting**: Sort servers by ping, name, date, or protocol
+## Privacy and safety model
 
-### UI/UX
-- **Beautiful UI**: Multiple theme options with smooth animations
-- **Live Stats**: Real-time upload/download speed and duration
-- **Matrix Background**: Animated cyberpunk-style background
-- **Connection Animation**: Visual feedback during connection
+Hesam Void is designed as a local-first client. It does not need a user account or a remote control plane. The project’s profile storage is encrypted with a locally generated AES-256 key, and the wrapping key is stored through the operating system’s secure-storage implementation. The Connection Navigator masks configuration URLs and password-like fragments before retaining an error explanation.
 
----
+The app cannot guarantee that a third-party server is available, safe, private or suitable for a particular network. Users should import configurations only from sources they trust and must comply with applicable laws and service terms.
 
-## Screenshots
+## Use the app
 
-| Connect Screen | Servers Screen | Settings |
-|:--------------:|:--------------:|:--------:|
-| ![Connect](screenshots/connect.png) | ![Servers](screenshots/servers.png) | ![Settings](screenshots/settings.png) |
+1. Open **SERVERS** and use the add action to import from clipboard, scan a QR code, or enter a supported URL manually.
+2. Select a profile and run a ping check when you want initial local evidence.
+3. Open **CONNECT**. The Connection Navigator displays the selected profile’s known health or recommends a better locally observed profile.
+4. Press the connect control and approve Android’s VPN permission when asked.
+5. Configure Auto-reconnect and Split Tunneling in settings only when you need them. A manual disconnect is never automatically retried.
 
----
+## Build from source
 
-## Supported Protocols
+The repository is configured for Flutter **3.35.4** and Dart **3.9.2**.
 
-| Protocol | Status | Description |
-|----------|--------|-------------|
-| VLESS + Reality | Full | Best for bypassing censorship |
-| VLESS + TLS | Full | Secure with TLS encryption |
-| VMess + WS | Full | WebSocket transport |
-| VMess + TCP | Full | Direct TCP connection |
-| Trojan | Full | HTTPS-like traffic |
-| Shadowsocks | Full | Lightweight and fast |
-
----
-
-## Installation
-
-### Download APK
-Download the latest APK from [Releases](../../releases/latest).
-
-### Requirements
-- Android 5.0 (API 21) or higher
-- ARM64, ARM, or x86_64 architecture
-
-### Build from Source
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/hesaaam/hesam-void.git
-   cd hesam-void
-   ```
-
-2. **Install dependencies**
-   ```bash
-   flutter pub get
-   ```
-
-3. **Build APK**
-   ```bash
-   flutter build apk --release
-   ```
-
-4. **Find APK at**
-   ```
-   build/app/outputs/flutter-apk/app-release.apk
-   ```
-
----
-
-## Usage
-
-1. **Add Server**: Go to SERVERS tab - Tap + - Import from clipboard or scan QR
-2. **Select Server**: Tap on a server card to select it
-3. **Connect**: Go to CONNECT tab - Tap the power button
-4. **Grant Permission**: Allow VPN permission when prompted
-5. **Enjoy**: Your traffic is now encrypted!
-
-### Config URL Formats
-
-```
-vless://uuid@server:port?type=tcp&security=reality&...#Name
-vmess://base64_encoded_config
-trojan://password@server:port?...#Name
-ss://base64_encoded_config#Name
+```bash
+flutter pub get
+flutter analyze
+flutter test
+flutter build apk --release
 ```
 
----
+The resulting APK is written to:
 
-## Tech Stack
-
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| Flutter | 3.35.4 | UI Framework |
-| Dart | 3.9.2 | Programming Language |
-| flutter_v2ray | 1.0.9 | V2Ray/Xray Core Integration |
-| Xray Core | 25.3.6 | VPN Engine |
-| Hive | 2.2.3 | Encrypted Local Storage |
-| Provider | 6.1.5+1 | State Management |
-
----
-
-## Project Structure
-
-```
-lib/
-├── main.dart                 # App entry point
-├── models/
-│   └── vpn_config.dart       # VPN config data model
-├── services/
-│   ├── vpn_service.dart      # VPN connection service
-│   ├── config_optimizer_service.dart  # Config optimization
-│   ├── fragment_service.dart # DPI bypass techniques
-│   ├── auto_reconnect_service.dart    # Auto reconnect
-│   ├── load_balancer_service.dart     # Load balancing
-│   ├── split_tunneling_service.dart   # Split tunneling
-│   ├── haptic_service.dart   # Haptic feedback
-│   └── ping_service.dart     # Server latency test
-├── providers/
-│   └── config_provider.dart  # Config state management
-├── screens/
-│   ├── home_screen.dart      # Main screen
-│   ├── settings_screen.dart  # Settings with themes
-│   ├── splash_screen.dart    # Animated splash
-│   └── qr_scanner_screen.dart # QR scanner
-├── widgets/
-│   ├── connect_button.dart   # Animated connect button
-│   ├── config_card.dart      # Server config card
-│   ├── speed_graph.dart      # Real-time speed graph
-│   ├── connection_map.dart   # Connection visualization
-│   ├── animated_background.dart # Matrix-style background
-│   └── qr_dialog.dart        # QR display dialog
-└── utils/
-    ├── app_theme.dart        # Base theme
-    └── theme_manager.dart    # Multi-theme system
+```text
+build/app/outputs/flutter-apk/app-release.apk
 ```
 
----
+## Development standards for v4
 
-## Themes
+Every new user-facing network feature should satisfy three requirements before it is shown as stable: it must be wired into the actual connection pipeline, validated through tests, and documented without overclaiming. Features that require a platform-specific implementation should fail clearly on unsupported platforms instead of simulating a result.
 
-| Theme | Description |
-|-------|-------------|
-| Terminal Green | Classic Matrix-style (default) |
-| Cyberpunk Purple | Neon purple aesthetic |
-| Ocean Blue | Calm blue tones |
-| Blood Red | Bold red theme |
-| Neon Orange | Vibrant orange |
-| Electric Teal | Fresh teal colors |
-| Midnight Gold | Luxurious gold accents |
-| Clean White | Light mode option |
-
----
-
-## Anti-Filtering Features
-
-### For Iran (and similar regions)
-- **Fragment Injection**: Split TLS hello packets
-- **TLS Padding**: Add random padding to bypass DPI
-- **SNI Randomization**: Randomize server name indication
-- **TLS Fingerprinting**: Mimic browser fingerprints (Chrome, Firefox, Safari)
-- **Reality Protocol**: Undetectable VPN traffic
-
----
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
----
+The repository’s `test/` directory contains regression tests for the configuration parser, NPVT SSH round-trip behavior and the app splash lifecycle. Run the checks above before opening a pull request.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## Disclaimer
-
-This software is for educational purposes only. Users are responsible for complying with local laws and regulations. The developers are not responsible for any misuse of this software.
-
----
-
-## Acknowledgments
-
-- [flutter_v2ray](https://github.com/blueboy-tm/flutter_v2ray) - V2Ray Flutter plugin
-- [Xray-core](https://github.com/XTLS/Xray-core) - The core engine
-- [Flutter](https://flutter.dev) - UI framework
-
----
-
-<p align="center">
-  Made with love by <a href="https://github.com/hesaaam">Hesam</a>
-</p>
+This project is distributed under the [MIT License](LICENSE).

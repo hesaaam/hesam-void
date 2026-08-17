@@ -3,6 +3,7 @@ import '../models/vpn_config.dart';
 import '../services/storage_service.dart';
 import '../services/config_parser_service.dart';
 import '../services/ping_service.dart';
+import '../services/connection_health_service.dart';
 
 /// State Management Provider for VPN Configurations
 class ConfigProvider extends ChangeNotifier {
@@ -32,7 +33,7 @@ class ConfigProvider extends ChangeNotifier {
     try {
       await StorageService.initialize();
       _configs = StorageService.getAllConfigs();
-      
+
       // Sort by creation date (newest first)
       _configs.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     } catch (e) {
@@ -50,7 +51,7 @@ class ConfigProvider extends ChangeNotifier {
     }
 
     final configs = ConfigParserService.parseMultipleConfigs(text);
-    
+
     if (configs.isEmpty) {
       return ImportResult(
         success: false,
@@ -76,7 +77,8 @@ class ConfigProvider extends ChangeNotifier {
     if (imported > 0) {
       return ImportResult(
         success: true,
-        message: 'Imported $imported config(s)${skipped > 0 ? ', $skipped skipped (duplicates)' : ''}',
+        message:
+            'Imported $imported config(s)${skipped > 0 ? ', $skipped skipped (duplicates)' : ''}',
         importedCount: imported,
         skippedCount: skipped,
       );
@@ -95,7 +97,7 @@ class ConfigProvider extends ChangeNotifier {
       if (StorageService.configExistsByUrl(config.rawUrl)) {
         return false;
       }
-      
+
       await StorageService.saveConfig(config);
       _configs.insert(0, config);
       notifyListeners();
@@ -156,7 +158,8 @@ class ConfigProvider extends ChangeNotifier {
     try {
       final config = _configs.firstWhere((c) => c.id == id);
       final ping = await PingService.testPing(config);
-      
+      await ConnectionHealthService().recordProbe(config.id, ping);
+
       // Update the config with new ping
       final index = _configs.indexWhere((c) => c.id == id);
       if (index != -1) {
@@ -167,7 +170,7 @@ class ConfigProvider extends ChangeNotifier {
         _configs[index] = updated;
         await StorageService.updateConfig(updated);
       }
-      
+
       return ping;
     } catch (e) {
       _error = 'Failed to test ping: $e';
@@ -197,10 +200,11 @@ class ConfigProvider extends ChangeNotifier {
           }
         },
       );
-      
+
       // Update all configs with results
       for (int i = 0; i < _configs.length; i++) {
         final ping = results[_configs[i].id];
+        await ConnectionHealthService().recordProbe(_configs[i].id, ping);
         final updated = _configs[i].copyWith(
           ping: ping,
           lastTestedAt: DateTime.now(),
@@ -208,10 +212,9 @@ class ConfigProvider extends ChangeNotifier {
         _configs[i] = updated;
         // Batch save for better performance
       }
-      
+
       // Save all updates at once
       await StorageService.saveConfigs(_configs);
-      
     } catch (e) {
       _error = 'Failed to test pings: $e';
     } finally {
@@ -220,12 +223,12 @@ class ConfigProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
-  
+
   /// Find and select fastest config automatically
   Future<VpnConfig?> selectFastest() async {
     _isTestingPing = true;
     notifyListeners();
-    
+
     try {
       final fastest = await PingService.findFastest(_configs);
       if (fastest != null) {
@@ -271,13 +274,16 @@ class ConfigProvider extends ChangeNotifier {
   /// Search configs by name or address
   List<VpnConfig> searchConfigs(String query) {
     if (query.isEmpty) return _configs;
-    
+
     final lowerQuery = query.toLowerCase();
-    return _configs.where((c) =>
-      c.name.toLowerCase().contains(lowerQuery) ||
-      c.address.toLowerCase().contains(lowerQuery) ||
-      c.protocolString.toLowerCase().contains(lowerQuery)
-    ).toList();
+    return _configs
+        .where(
+          (c) =>
+              c.name.toLowerCase().contains(lowerQuery) ||
+              c.address.toLowerCase().contains(lowerQuery) ||
+              c.protocolString.toLowerCase().contains(lowerQuery),
+        )
+        .toList();
   }
 
   /// Clear error
