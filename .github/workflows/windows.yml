@@ -14,7 +14,9 @@ permissions:
 jobs:
   build-windows:
     name: Build Windows 4SUPER
-    runs-on: windows-latest
+    # Flutter 3.35.4 selects the VS2019 CMake generator; use the matching
+    # GitHub-hosted image instead of letting windows-latest resolve to VS2022.
+    runs-on: windows-2019
     timeout-minutes: 35
 
     steps:
