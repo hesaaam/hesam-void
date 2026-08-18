@@ -340,7 +340,7 @@ namespace
       DWORD credError = 0;
       PBYTE AesKey;
       PCREDENTIALW pcred;
-      const auto target_name = Utf8ToWide("key_" + ELEMENT_PREFERENCES_KEY_PREFIX);
+      auto target_name = Utf8ToWide("key_" + ELEMENT_PREFERENCES_KEY_PREFIX);
 
       AesKey = (PBYTE)HeapAlloc(GetProcessHeap(), 0, KEY_SIZE);
       if (NULL == AesKey) {
@@ -368,7 +368,7 @@ namespace
       }
       CREDENTIALW cred = { 0 };
       cred.Type = CRED_TYPE_GENERIC;
-      cred.TargetName = target_name.c_str();
+      cred.TargetName = target_name.data();
       cred.CredentialBlobSize = KEY_SIZE;
       cred.CredentialBlob = AesKey;
       cred.Persist = CRED_PERSIST_LOCAL_MACHINE;
