@@ -245,7 +245,7 @@ Map<String, dynamic> buildWindowsTunConfiguration(String rawUrl) {
   final parsed = FlutterV2ray.parseFromURL(rawUrl);
   final configuration =
       jsonDecode(parsed.getFullConfiguration()) as Map<String, dynamic>;
-  _normalizeModernReality(configuration);
+  _normalizeModernXrayConfiguration(configuration);
 
   configuration['log'] = <String, dynamic>{'loglevel': 'warning'};
   configuration['inbounds'] = <Map<String, dynamic>>[
@@ -272,11 +272,17 @@ Map<String, dynamic> buildWindowsTunConfiguration(String rawUrl) {
   return configuration;
 }
 
-/// Xray's modern Reality schema names the peer public key `password`.
-/// flutter_v2ray 1.0.9 emits the older `publicKey` name, so normalize only
-/// the generated runtime JSON and leave the original user URL untouched.
-void _normalizeModernReality(Object? node) {
+/// Normalizes parser output for the bundled modern Xray Core without changing
+/// the user's original URL. flutter_v2ray 1.0.9 still emits two legacy keys:
+/// `publicKey` for Reality and `allowInsecure` for TLS. New Xray releases use
+/// `password` for Reality and reject `allowInsecure` entirely, even when false.
+void _normalizeModernXrayConfiguration(Object? node) {
   if (node is Map) {
+    // Xray 26+ refuses this legacy field. Removing it preserves normal TLS
+    // certificate validation; profiles that require insecure TLS are rejected
+    // by their server trust chain instead of silently disabling verification.
+    node.remove('allowInsecure');
+
     final reality = node['realitySettings'];
     if (reality is Map &&
         reality['password'] == null &&
@@ -285,11 +291,11 @@ void _normalizeModernReality(Object? node) {
       reality.remove('publicKey');
     }
     for (final value in node.values) {
-      _normalizeModernReality(value);
+      _normalizeModernXrayConfiguration(value);
     }
   } else if (node is List) {
     for (final value in node) {
-      _normalizeModernReality(value);
+      _normalizeModernXrayConfiguration(value);
     }
   }
 }

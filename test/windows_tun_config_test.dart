@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hesam_void/services/windows_xray_service.dart';
 
@@ -27,6 +29,14 @@ void main() {
       final reality = stream['realitySettings'] as Map;
       expect(reality['password'], 'public-key-for-contract-test');
       expect(reality.containsKey('publicKey'), isFalse);
+    });
+
+    test('removes legacy TLS allowInsecure before Core receives JSON', () {
+      final config = buildWindowsTunConfiguration(
+        'vless://11111111-1111-4111-8111-111111111111@example.com:443?encryption=none&security=tls&sni=example.com&type=tcp#tls',
+      );
+
+      expect(jsonEncode(config), isNot(contains('allowInsecure')));
     });
   });
 }
