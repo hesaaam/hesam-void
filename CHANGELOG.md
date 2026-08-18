@@ -2,34 +2,6 @@
 
 All notable changes to Hesam Void are documented in this file.
 
-## [4.0.3] — Windows 4SUPER Preview
-
-### Added
-
-| Area | Change |
-|---|---|
-| Desktop Command Deck | Added a Windows-first interface with Live Tunnel status, Quick Import, Server Studio, profile validation, local activity context and desktop-density controls. |
-| On-demand Core | Added a Windows Xray lifecycle that starts one child process only for an active session and keeps no network daemon alive while disconnected. |
-| Native TUN mode | Added runtime Xray TUN configuration with automatic routes and automatic outbound-interface selection to prevent routing loops. |
-| Runtime packaging | Added a reproducible PowerShell runtime fetcher for Xray `v26.3.27` and signed Wintun `0.14.1`, an Inno Setup installer definition and Windows GitHub Actions packaging. |
-
-### Changed
-
-| Area | Change |
-|---|---|
-| Platform entry | Android remains on the established 4SUPER flow; Windows opens the dedicated desktop shell without changing Android UI behavior. |
-| Release assets | Tagged releases can now attach a Windows `Setup.exe` and `SHA256SUMS-windows.txt` beside the Android asset. |
-
-### Known limitations
-
-| Feature | Windows Preview behavior |
-|---|---|
-| Production assurance | Windows TUN data-plane requires real-device validation before it can be described as a stable replacement for Android. |
-| System requirements | The installer asks for Administrator rights because Windows may require permission to create/configure the virtual TUN adapter. |
-| Code signing | The Preview installer is not yet Authenticode-signed with a production certificate. |
-
----
-
 ## [4.0.2] - 2026-08-17 — 4SUPER
 
 ### Added
