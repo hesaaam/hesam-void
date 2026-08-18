@@ -44,6 +44,13 @@ dependencies:
   url_launcher: 6.3.1
   path_provider: 2.1.5
 
+dependency_overrides:
+  # The upstream 3.1.2 Windows implementation depends on ATL headers that are
+  # absent from standard hosted runners. This audited local patch uses native
+  # UTF-8/UTF-16 conversion APIs and preserves Credential Manager behavior.
+  flutter_secure_storage_windows:
+    path: packages/flutter_secure_storage_windows_patched
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

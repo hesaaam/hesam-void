@@ -21,16 +21,6 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Install Visual C++ ATL headers
-        shell: pwsh
-        run: |
-          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-          $installer = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vs_installer.exe'
-          $installPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          if (-not $installPath) { throw 'Visual Studio C++ build tools were not found.' }
-          & $installer modify --installPath $installPath --add Microsoft.VisualStudio.Component.VC.ATL --includeRecommended --quiet --norestart --wait
-          if ($LASTEXITCODE -ne 0) { throw "Visual Studio ATL installation failed with exit code $LASTEXITCODE." }
-
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
