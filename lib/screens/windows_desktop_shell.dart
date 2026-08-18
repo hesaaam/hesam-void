@@ -558,6 +558,7 @@ class _WindowsDesktopShellState extends State<WindowsDesktopShell>
   Color _stateColor(WindowsConnectionState state) => switch (state) {
     WindowsConnectionState.connected => const Color(0xFFB5FF5F),
     WindowsConnectionState.starting => const Color(0xFF73E6FF),
+    WindowsConnectionState.verifying => const Color(0xFFFFD36A),
     WindowsConnectionState.failed => const Color(0xFFFF7B86),
     WindowsConnectionState.disconnected => const Color(0xFFFFB86B),
   };
@@ -565,6 +566,7 @@ class _WindowsDesktopShellState extends State<WindowsDesktopShell>
   String _stateTitle(WindowsConnectionState state) => switch (state) {
     WindowsConnectionState.connected => 'PROTECTED · FULL TUN ACTIVE',
     WindowsConnectionState.starting => 'BUILDING YOUR PRIVATE ROUTE',
+    WindowsConnectionState.verifying => 'VERIFYING REAL PROTECTED TRAFFIC',
     WindowsConnectionState.failed => 'ROUTE NEEDS ATTENTION',
     WindowsConnectionState.disconnected => 'YOUR NETWORK IS WAITING',
   };

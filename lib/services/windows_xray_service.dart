@@ -30,7 +30,9 @@ class WindowsXrayService extends ChangeNotifier {
   String? get message => _message;
   VpnConfig? get activeProfile => _activeProfile;
   bool get isRunning => _state == WindowsConnectionState.connected;
-  bool get isBusy => _state == WindowsConnectionState.starting;
+  bool get isBusy =>
+      _state == WindowsConnectionState.starting ||
+      _state == WindowsConnectionState.verifying;
   String get lastNativeLog => _lastNativeLog;
 
   bool get isSupported => !kIsWeb && Platform.isWindows;
@@ -89,6 +91,7 @@ class WindowsXrayService extends ChangeNotifier {
           if (!identical(process, _process)) return;
           _process = null;
           if (_state == WindowsConnectionState.starting ||
+              _state == WindowsConnectionState.verifying ||
               _state == WindowsConnectionState.connected) {
             _setState(
               WindowsConnectionState.failed,
@@ -102,12 +105,22 @@ class WindowsXrayService extends ChangeNotifier {
         }),
       );
 
-      // A surviving elevated Core process means the local TUN controller has
-      // accepted the profile. No busy loop or periodic probe is started; this
-      // keeps idle CPU usage near zero.
-      await Future<void>.delayed(const Duration(milliseconds: 1200));
-      if (identical(process, _process)) {
-        _setState(WindowsConnectionState.connected, 'TUN route is active');
+      // A surviving process is not proof of a VPN. Confirm the system route
+      // and one external request before the UI is allowed to say Connected.
+      _setState(
+        WindowsConnectionState.verifying,
+        'Verifying TUN route and protected traffic…',
+      );
+      final verification = await _verifyDataPlane(process);
+      if (!identical(process, _process)) return;
+      if (verification.isVerified) {
+        _setState(
+          WindowsConnectionState.connected,
+          'Protected traffic verified through full TUN',
+        );
+      } else {
+        await disconnect(silent: true);
+        _setState(WindowsConnectionState.failed, verification.message);
       }
     } catch (error) {
       _process = null;
@@ -156,6 +169,78 @@ class WindowsXrayService extends ChangeNotifier {
   void _captureNativeLog(String line) {
     if (line.trim().isEmpty) return;
     _lastNativeLog = _safeNativeMessage(line);
+  }
+
+  Future<_DataPlaneVerification> _verifyDataPlane(Process process) async {
+    // Give Windows and Xray a short, bounded interval to create Wintun and add
+    // the documented routes. This is a one-shot check, never a polling loop.
+    await Future<void>.delayed(const Duration(seconds: 2));
+    if (!identical(process, _process)) {
+      return const _DataPlaneVerification.failed(
+        'Xray stopped before the TUN route could be verified.',
+      );
+    }
+
+    final routeTable = await _readWindowsRouteTable();
+    if (!hasHesamVoidTunRoute(routeTable)) {
+      return const _DataPlaneVerification.failed(
+        'Windows did not install the Hesam Void TUN default route. '
+        'Approve the UAC prompt and check that no other VPN owns the route.',
+      );
+    }
+
+    final reachable = await _probeExternalReachability();
+    if (!reachable) {
+      return const _DataPlaneVerification.failed(
+        'The TUN route is present, but protected traffic could not reach the '
+        'verification endpoint. The profile was not marked Connected.',
+      );
+    }
+
+    return const _DataPlaneVerification.verified();
+  }
+
+  Future<String> _readWindowsRouteTable() async {
+    try {
+      final result = await Process.run('route', const <String>[
+        'print',
+        '-4',
+      ]).timeout(const Duration(seconds: 4));
+      return '${result.stdout}\n${result.stderr}';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  Future<bool> _probeExternalReachability() async {
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 6)
+      ..findProxy = (Uri _) => 'DIRECT';
+    final targets = <Uri>[
+      Uri(scheme: 'https', host: 'www.cloudflare.com', path: '/cdn-cgi/trace'),
+      Uri(scheme: 'https', host: 'www.google.com', path: '/generate_204'),
+    ];
+    try {
+      for (final target in targets) {
+        try {
+          final request = await client
+              .getUrl(target)
+              .timeout(const Duration(seconds: 7));
+          final response = await request.close().timeout(
+            const Duration(seconds: 7),
+          );
+          await response.drain<void>();
+          if (response.statusCode >= 200 && response.statusCode < 400) {
+            return true;
+          }
+        } catch (_) {
+          // Try the next independent endpoint; no background retry is kept.
+        }
+      }
+      return false;
+    } finally {
+      client.close(force: true);
+    }
   }
 
   Future<_RuntimeFiles> _prepareRuntimeFiles(VpnConfig config) async {
@@ -300,7 +385,32 @@ void _normalizeModernXrayConfiguration(Object? node) {
   }
 }
 
-enum WindowsConnectionState { disconnected, starting, connected, failed }
+bool hasHesamVoidTunRoute(String routeTable) {
+  // `gateway` is part of the generated Xray TUN contract. Looking for it in
+  // Windows' IPv4 route output prevents a direct-network response from being
+  // mistaken for a protected data-plane success.
+  return routeTable.contains('172.27.0.1');
+}
+
+class _DataPlaneVerification {
+  const _DataPlaneVerification._(this.isVerified, this.message);
+
+  const _DataPlaneVerification.verified()
+    : this._(true, 'Protected traffic verified through full TUN');
+
+  const _DataPlaneVerification.failed(String message) : this._(false, message);
+
+  final bool isVerified;
+  final String message;
+}
+
+enum WindowsConnectionState {
+  disconnected,
+  starting,
+  verifying,
+  connected,
+  failed,
+}
 
 class WindowsValidationResult {
   const WindowsValidationResult._(this.isValid, this.message);

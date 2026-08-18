@@ -38,5 +38,13 @@ void main() {
 
       expect(jsonEncode(config), isNot(contains('allowInsecure')));
     });
+
+    test(
+      'accepts only the generated TUN gateway as an active Windows route',
+      () {
+        expect(hasHesamVoidTunRoute('0.0.0.0 0.0.0.0 172.27.0.1 6'), isTrue);
+        expect(hasHesamVoidTunRoute('0.0.0.0 0.0.0.0 192.168.1.1 25'), isFalse);
+      },
+    );
   });
 }
