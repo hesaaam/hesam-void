@@ -617,29 +617,35 @@ class _Rail extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 11),
-                const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'HESAM VOID',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontFamily: 'JetBrainsMono',
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1.5,
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'HESAM VOID',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontFamily: 'JetBrainsMono',
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.5,
+                        ),
                       ),
-                    ),
-                    SizedBox(height: 3),
-                    Text(
-                      '4SUPER · WINDOWS',
-                      style: TextStyle(
-                        color: Color(0xFFB5FF5F),
-                        fontSize: 9,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.15,
+                      SizedBox(height: 3),
+                      Text(
+                        '4SUPER · WINDOWS',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Color(0xFFB5FF5F),
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.15,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ],
             ),
