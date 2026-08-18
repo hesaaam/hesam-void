@@ -9,7 +9,7 @@ All notable changes to Hesam Void are documented in this file.
 | Area | Change |
 |---|---|
 | TUN startup | Removed the preflight `xray run -test` process. For a TUN inbound this is not syntax-only: it attempts to open the adapter and could fail before the managed Core process starts. |
-| Windows privileges | Added an explicit `requireAdministrator` application manifest so the TUN Core can create the virtual adapter and system routes after the user accepts UAC. |
+| Windows privileges | Added a native UAC relaunch before Flutter starts, so the managed TUN Core inherits an Administrator token to create the virtual adapter and system routes. |
 | TUN contract | Added the explicit Xray `userLevel: 0` setting and preserved the official gateway, DNS, automatic-route and outbound-interface settings. |
 | Diagnostics | Expanded native error retention and made the failure panel selectable so Windows users can copy the actual Xray diagnostic. |
 
