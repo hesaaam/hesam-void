@@ -1,0 +1,5 @@
+# Downloaded by tools/windows/fetch_runtime.ps1 and CI only.
+*.exe
+*.dll
+*.zip
+!.gitignore

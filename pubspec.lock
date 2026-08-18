@@ -175,12 +175,11 @@ packages:
     source: hosted
     version: "1.2.1"
   flutter_secure_storage_windows:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: flutter_secure_storage_windows
-      sha256: b20b07cb5ed4ed74fc567b78a72936203f587eba460af1df11281c9326cd3709
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/flutter_secure_storage_windows_patched"
+      relative: true
+    source: path
     version: "3.1.2"
   flutter_shaders:
     dependency: transitive
@@ -369,7 +368,7 @@ packages:
     source: hosted
     version: "1.9.1"
   path_provider:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: path_provider
       sha256: "50c5dd5b6e1aaf6fb3a78b33f6aa3afca52bf903a8a5298f53101fdaee55bbcd"

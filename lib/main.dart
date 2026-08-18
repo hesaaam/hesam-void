@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'providers/config_provider.dart';
 import 'screens/home_screen.dart';
+import 'screens/windows_desktop_shell.dart';
 import 'utils/app_theme.dart';
 import 'services/config_optimizer_service.dart';
 import 'services/fragment_service.dart';
@@ -24,21 +26,22 @@ void main() async {
   await AutoReconnectService().initializeStorage();
   await ConnectionHealthService().initialize();
 
-  // Set system UI overlay style for immersive dark theme
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-      systemNavigationBarColor: AppTheme.backgroundDark,
-      systemNavigationBarIconBrightness: Brightness.light,
-    ),
-  );
-
-  // Lock orientation to portrait
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
+  // Android keeps the established immersive mobile presentation. Windows uses
+  // its own desktop shell and must remain resizable rather than portrait-only.
+  if (!Platform.isWindows) {
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: AppTheme.backgroundDark,
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+    );
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+  }
 
   runApp(const HesamVoidApp());
 }
@@ -51,10 +54,14 @@ class HesamVoidApp extends StatelessWidget {
     return MultiProvider(
       providers: [ChangeNotifierProvider(create: (_) => ConfigProvider())],
       child: MaterialApp(
-        title: 'Hesam Void',
+        title: Platform.isWindows
+            ? 'Hesam Void 4SUPER for Windows'
+            : 'Hesam Void',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
-        home: const SplashScreen(),
+        home: Platform.isWindows
+            ? const WindowsDesktopShell()
+            : const SplashScreen(),
       ),
     );
   }

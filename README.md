@@ -20,6 +20,22 @@ The QR Code contains the direct APK asset URL, not the Release page. On most And
 
 > Android may ask you to allow installation from your browser or file manager. If an older build was signed with a different key, uninstall it before installing this test release.
 
+## Windows 4SUPER Preview
+
+The repository now includes **Hesam Void 4SUPER for Windows**, a desktop-first companion built from the same local-first profile model but with a dedicated Command Deck UI. Its desktop engine starts a single Xray process only while connected; it uses Xray’s Windows TUN inbound, automatic system routes and automatic outbound-interface selection so the Core does not loop its own traffic back into the tunnel.[1]
+
+The Windows Preview is distributed as an installer (`Setup.exe`) beside the Android APK in each compatible GitHub Release. It bundles the signed Wintun runtime required by the Windows TUN interface; the runtime is downloaded and checksum-validated only in the build workflow, never committed into this repository.[2]
+
+| Windows capability | Preview behavior |
+|---|---|
+| **Command Deck** | A keyboard-and-mouse desktop workspace with Live Tunnel status, Quick Import, Server Studio, profile validation and local-only activity context. |
+| **Full-system mode** | Xray creates the TUN adapter and routes selected system traffic through it. Administrator rights are requested by the installer because Windows may need to create and configure the virtual adapter. |
+| **Resource discipline** | No daemon runs while disconnected, no polling loop is started for decorative UI, and only one Xray child process may own the active TUN route. |
+| **Configuration privacy** | Runtime Xray JSON is generated locally from the selected profile inside the user support directory; imported configuration URLs are never uploaded by the application. |
+| **Installer delivery** | Windows CI builds a native Release folder, packages it with Inno Setup, and attaches `Hesam-Void-4SUPER-Windows-Setup.exe` plus a checksum to the GitHub Release. |
+
+> The Windows Preview requires on-device validation on a real Windows machine before it should be described as a stable replacement for the Android client. A successful native process is not treated as proof that a third-party server is reachable.
+
 ## What makes 4SUPER different
 
 | Capability | What the user gets | What stays local |
@@ -74,19 +90,36 @@ flutter pub get
 flutter analyze
 flutter test
 flutter build apk --release
+
+# Windows: run this in PowerShell on Windows before building.
+.\tools\windows\fetch_runtime.ps1
+flutter build windows --release
 ```
 
-The resulting APK is written to:
+The resulting Android APK is written to:
 
 ```text
 build/app/outputs/flutter-apk/app-release.apk
 ```
+
+The Windows executable and its required DLL/data directory are written to:
+
+```text
+build/windows/x64/runner/Release/
+```
+
+Use `installer/windows/hesam_void_4super.iss` with Inno Setup to generate the shareable Windows `Setup.exe`. The GitHub workflow performs these steps automatically.
 
 ## Development standards for 4SUPER
 
 Every new user-facing network feature should satisfy three requirements before it is shown as stable: it must be wired into the actual connection pipeline, validated through tests, and documented without overclaiming. Features that require a platform-specific implementation should fail clearly on unsupported platforms instead of simulating a result.
 
 The repository’s `test/` directory contains regression tests for the configuration parser, NPVT SSH round-trip behavior and the app splash lifecycle. Run the checks above before opening a pull request.
+
+## References
+
+[1]: https://xtls.github.io/en/config/inbounds/tun.html "Xray TUN inbound documentation"
+[2]: https://www.wintun.net/ "Wintun official distribution and integration guidance"
 
 ## License
 
