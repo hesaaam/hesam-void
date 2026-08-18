@@ -1,4 +1,4 @@
-# Hesam Void 4.1SUPER
+# Hesam Void 4SUPER
 
 > **A local-first Android connection navigator for user-owned VPN and SSH configurations.**
 
@@ -6,17 +6,17 @@ Hesam Void is an Android client for people who manage their own proxy and SSH pr
 
 **4SUPER** turns Hesam Void into an Alive Signal workspace: a local-first experience for choosing a route, understanding its health, connecting with intention and reviewing what happened afterwards. The app does not sell VPN servers, require an account, upload raw configuration URLs, or make guaranteed availability claims.
 
-## Download 4.1SUPER APK
+## Download 4SUPER APK
 
 <p align="center">
-  <a href="https://github.com/hesaaam/hesam-void/releases/download/v4.1.0/hesam-void-4-1-super-universal.apk">
-    <img src="assets/images/hesam-void-4-1-super-download-qr.png" width="280" alt="Scan to download Hesam Void 4.1SUPER Universal APK directly">
+  <a href="https://github.com/hesaaam/hesam-void/releases/download/v4.0.2/hesam-void-4super-universal.apk">
+    <img src="assets/images/hesam-void-4super-download-qr.png" width="280" alt="Scan to download Hesam Void 4SUPER Universal APK directly">
   </a>
 </p>
 
-<p align="center"><strong>Scan the QR Code to download the 4.1SUPER Universal APK directly.</strong></p>
+<p align="center"><strong>Scan the QR Code to download the 4SUPER Universal APK directly.</strong></p>
 
-The QR Code contains the direct APK asset URL, not the Release page. On most Android phones, scanning opens the browser download flow immediately. You can also use the direct link: [Download Hesam Void 4.1SUPER Universal APK](https://github.com/hesaaam/hesam-void/releases/download/v4.1.0/hesam-void-4-1-super-universal.apk).
+The QR Code contains the direct APK asset URL, not the Release page. On most Android phones, scanning opens the browser download flow immediately. You can also use the direct link: [Download Hesam Void 4SUPER Universal APK](https://github.com/hesaaam/hesam-void/releases/download/v4.0.2/hesam-void-4super-universal.apk).
 
 > Android may ask you to allow installation from your browser or file manager. If an older build was signed with a different key, uninstall it before installing this test release.
 
@@ -38,7 +38,7 @@ The QR Code contains the direct APK asset URL, not the Release page. On most And
 
 | Family | Import | Tunnel mode | Notes |
 |---|---:|---:|---|
-| VLESS, including TCP + Reality + Vision and current ML-KEM/0-RTT encryption links | Yes | Xray VPN | Uses a vendored AndroidLibXrayLite 26.7.31 adapter; current Reality settings are retained in the generated Core JSON. |
+| VLESS, including Reality | Yes | Xray VPN | Uses the `flutter_v2ray` engine integration. |
 | VMess | Yes | Xray VPN | Standard encoded VMess links are supported. |
 | Trojan | Yes | Xray VPN | Standard Trojan links are supported. |
 | Shadowsocks | Yes | Xray VPN | SIP002 and legacy credential encodings are parsed. |
@@ -63,7 +63,7 @@ The app cannot guarantee that a third-party server is available, safe, private o
 2. Select a profile and run a ping check when you want initial local evidence.
 3. Open **CONNECT**. The Connection Navigator displays the selected profile’s known health or recommends a better locally observed profile.
 4. Press the connect control and approve Android’s VPN permission when asked.
-5. Configure Auto-reconnect and Split Tunneling in settings only when you need them. A manual disconnect is never automatically retried. If a VLESS Reality route cannot start, 4.1SUPER now exits Connecting after 25 seconds with a local error instead of waiting indefinitely.
+5. Configure Auto-reconnect and Split Tunneling in settings only when you need them. A manual disconnect is never automatically retried.
 
 ## Build from source
 
@@ -82,7 +82,7 @@ The resulting APK is written to:
 build/app/outputs/flutter-apk/app-release.apk
 ```
 
-## Development standards for 4.1SUPER
+## Development standards for 4SUPER
 
 Every new user-facing network feature should satisfy three requirements before it is shown as stable: it must be wired into the actual connection pipeline, validated through tests, and documented without overclaiming. Features that require a platform-specific implementation should fail clearly on unsupported platforms instead of simulating a result.
 

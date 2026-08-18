@@ -101,10 +101,6 @@ class VpnService extends ChangeNotifier {
   bool _isInitialized = false;
   int? _sshProxyPort; // SSH proxy port when connected
   DateTime? _suppressDropRecordingUntil;
-  Timer? _connectTimeoutTimer;
-  int _connectionAttempt = 0;
-
-  static const Duration _connectionTimeout = Duration(seconds: 25);
 
   // Getters
   VpnStatus get status => _status;
@@ -168,7 +164,6 @@ class VpnService extends ChangeNotifier {
   /// Handle V2Ray status changes from the core
   void _onStatusChanged(V2RayStatus v2rayStatus) {
     final wasConnected = _status == VpnStatus.connected;
-    final wasConnecting = _status == VpnStatus.connecting;
     if (kDebugMode) {
       debugPrint('[VpnService] Status changed: ${v2rayStatus.state}');
       debugPrint('[VpnService] Duration: ${v2rayStatus.duration}');
@@ -189,7 +184,6 @@ class VpnService extends ChangeNotifier {
     // Map V2Ray state to our VpnStatus
     switch (v2rayStatus.state) {
       case 'CONNECTED':
-        _cancelConnectionTimeout();
         _status = VpnStatus.connected;
         _errorMessage = null;
         final config = _currentConfig;
@@ -199,20 +193,8 @@ class VpnService extends ChangeNotifier {
         break;
       case 'DISCONNECTED':
       case 'STOPPED':
-        final config = _currentConfig;
-        if (_status == VpnStatus.error && _errorMessage != null) {
-          notifyListeners();
-          break;
-        }
-        if (wasConnecting && config != null) {
-          _setConnectionError(
-            config,
-            'Xray stopped before the route became ready. For REALITY, verify the public key, SNI, fingerprint, short ID and server Core compatibility.',
-          );
-          break;
-        }
-        _cancelConnectionTimeout();
         _status = VpnStatus.disconnected;
+        final config = _currentConfig;
         final dropIsSuppressed =
             _suppressDropRecordingUntil != null &&
             DateTime.now().isBefore(_suppressDropRecordingUntil!);
@@ -256,7 +238,6 @@ class VpnService extends ChangeNotifier {
       _status = VpnStatus.connecting;
       _currentConfig = config;
       _errorMessage = null;
-      _beginConnectionAttempt(config);
       notifyListeners();
 
       if (kDebugMode) {
@@ -280,7 +261,6 @@ class VpnService extends ChangeNotifier {
       // Request VPN permission - REQUIRED for VPN mode
       bool hasPermission = await flutterV2ray.requestPermission();
       if (!hasPermission) {
-        _cancelConnectionTimeout();
         _status = VpnStatus.error;
         _errorMessage = 'VPN permission denied. Please allow VPN permission.';
         notifyListeners();
@@ -313,7 +293,6 @@ class VpnService extends ChangeNotifier {
 
       return true;
     } catch (e) {
-      _cancelConnectionTimeout();
       _status = VpnStatus.error;
       _errorMessage = 'Connection failed: $e';
       unawaited(
@@ -325,37 +304,6 @@ class VpnService extends ChangeNotifier {
       notifyListeners();
       return false;
     }
-  }
-
-  void _beginConnectionAttempt(VpnConfig config) {
-    _connectionAttempt++;
-    final attempt = _connectionAttempt;
-    _cancelConnectionTimeout();
-    _connectTimeoutTimer = Timer(_connectionTimeout, () {
-      if (_connectionAttempt != attempt || _status != VpnStatus.connecting) {
-        return;
-      }
-      _setConnectionError(
-        config,
-        'Connection timed out after ${_connectionTimeout.inSeconds} seconds. For VLESS REALITY, confirm that the profile uses a current Xray Core and that the Reality key, SNI, fingerprint and short ID match the server.',
-      );
-      if (_isInitialized) {
-        unawaited(flutterV2ray.stopV2Ray());
-      }
-    });
-  }
-
-  void _cancelConnectionTimeout() {
-    _connectTimeoutTimer?.cancel();
-    _connectTimeoutTimer = null;
-  }
-
-  void _setConnectionError(VpnConfig config, String message) {
-    _cancelConnectionTimeout();
-    _status = VpnStatus.error;
-    _errorMessage = message;
-    unawaited(ConnectionHealthService().recordFailure(config.id, message));
-    notifyListeners();
   }
 
   /// Connect to SSH server using dartssh2 + V2Ray VPN mode
@@ -677,8 +625,6 @@ class VpnService extends ChangeNotifier {
     if (kIsWeb || !_isInitialized) return;
 
     try {
-      _connectionAttempt++;
-      _cancelConnectionTimeout();
       _status = VpnStatus.disconnecting;
       _suppressDropRecordingUntil = DateTime.now().add(
         const Duration(seconds: 3),
@@ -783,7 +729,6 @@ class VpnService extends ChangeNotifier {
   /// Dispose resources
   @override
   void dispose() {
-    _cancelConnectionTimeout();
     super.dispose();
   }
 }

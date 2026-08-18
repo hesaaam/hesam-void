@@ -2,39 +2,6 @@
 
 All notable changes to Hesam Void are documented in this file.
 
-## [4.1.0] - 2026-08-17 — 4.1SUPER
-
-### Fixed
-
-| Area | Change |
-|---|---|
-| VLESS TCP Reality Vision | Replaced the historical Android Core binding with a vendored adapter for AndroidLibXrayLite `26.7.31`, allowing current Xray support for VLESS Encryption, ML-KEM hybrid handshakes and `0rtt` profiles. |
-| Reality configuration | The VLESS share-link `pbk` field now becomes the current Xray `realitySettings.password` field. `flow`, `sid`, `spx`, `sni`, `fp` and the full `encryption` string are retained. |
-| Connecting lifecycle | V2Ray attempts now have a 25-second watchdog. A stopped Core or timeout becomes a visible, local Error with remediation guidance instead of an endless Connecting state. |
-| Android Core service | The VPN lifecycle now establishes the TUN descriptor before starting the maintained CoreController API, rather than depending on the retired `V2RayPoint` callback interface. |
-
-### Added
-
-| Area | Change |
-|---|---|
-| Reality regression tests | Added parser coverage for VLESS Reality Vision ML-KEM/0-RTT fields and an opt-in Core validation test that runs `xray run -test` against a sanitized generated configuration. |
-| Upgrade traceability | The local Android Core adapter and the official Xray research notes are versioned in the repository so the binary Core upgrade is reviewable. |
-
-### Verified
-
-- Flutter parser and widget regression tests pass.
-- The generated Reality Vision JSON is accepted by Xray `26.3.27` in `run -test` mode using generated test keys; no user profile or network connection is used during this test.
-- Android debug and release APK builds compile with the vendored Core adapter before release.
-
-### Known limitations
-
-| Feature | 4.1SUPER behavior |
-|---|---|
-| Remote route reachability | The app can validate config structure and emits a timeout/error, but a client cannot prove a remote server is reachable without attempting a real route. Server-side Reality parameters must still match the share link. |
-| Production signing | GitHub APK builds are test-signed. A durable private keystore remains required before Play Store or broad public distribution. |
-
----
-
 ## [4.0.2] - 2026-08-17 — 4SUPER
 
 ### Added

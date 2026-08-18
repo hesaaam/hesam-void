@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_v2ray/flutter_v2ray.dart';
 import 'package:hesam_void/models/ssh_config.dart';
 import 'package:hesam_void/models/vpn_config.dart';
 import 'package:hesam_void/services/config_parser_service.dart';
@@ -19,37 +18,6 @@ void main() {
       expect(config.name, 'Primary');
       expect(config.address, 'example.com');
       expect(config.port, 443);
-    });
-
-    test('preserves VLESS Reality Vision ML-KEM settings for Xray', () {
-      const raw =
-          'vless://33333333-3333-3333-3333-333333333333@reality.example.com:443?encryption=mlkem768x25519plus.native.0rtt.test-verification-key&flow=xtls-rprx-vision&security=reality&sni=www.example.com&fp=chrome&pbk=test-public-key&sid=6bad&spx=%2F&type=tcp&headerType=none#Reality%20Vision';
-
-      final parsed = ConfigParserService.parseConfig(raw);
-      final fullConfig = FlutterV2ray.parseFromURL(raw).getFullConfiguration();
-      final xray = jsonDecode(fullConfig) as Map<String, dynamic>;
-      final outbound =
-          (xray['outbounds'] as List).first as Map<String, dynamic>;
-      final user =
-          ((outbound['settings'] as Map<String, dynamic>)['vnext'] as List)
-                  .first['users']
-              as List;
-      final stream = outbound['streamSettings'] as Map<String, dynamic>;
-      final reality = stream['realitySettings'] as Map<String, dynamic>;
-
-      expect(parsed, isNotNull);
-      expect(parsed!.isReality, isTrue);
-      expect(parsed.flow, 'xtls-rprx-vision');
-      expect(parsed.rawUrl, contains('mlkem768x25519plus.native.0rtt'));
-      expect(
-        (user.first as Map<String, dynamic>)['encryption'],
-        'mlkem768x25519plus.native.0rtt.test-verification-key',
-      );
-      expect((user.first as Map<String, dynamic>)['flow'], 'xtls-rprx-vision');
-      expect(stream['security'], 'reality');
-      expect(reality['password'], 'test-public-key');
-      expect(reality['shortId'], '6bad');
-      expect(reality['spiderX'], '/');
     });
 
     test('parses a VMess JSON configuration', () {

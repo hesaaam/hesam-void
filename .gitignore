@@ -77,6 +77,3 @@ coverage/
 
 # Test files
 *.g.dart
-
-# Local release staging (upload separately to GitHub Releases)
-/release-assets/
