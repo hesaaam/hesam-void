@@ -2,6 +2,23 @@
 
 All notable changes to Hesam Void are documented in this file.
 
+## [4.0.4] — Windows TUN Startup Patch
+
+### Fixed
+
+| Area | Change |
+|---|---|
+| TUN startup | Removed the preflight `xray run -test` process. For a TUN inbound this is not syntax-only: it attempts to open the adapter and could fail before the managed Core process starts. |
+| Windows privileges | Added an explicit `requireAdministrator` application manifest so the TUN Core can create the virtual adapter and system routes after the user accepts UAC. |
+| TUN contract | Added the explicit Xray `userLevel: 0` setting and preserved the official gateway, DNS, automatic-route and outbound-interface settings. |
+| Diagnostics | Expanded native error retention and made the failure panel selectable so Windows users can copy the actual Xray diagnostic. |
+
+### Verification status
+
+The Dart configuration contract and Flutter test suite pass. The patch still requires Windows data-plane verification with a real profile before it is promoted from Preview to Stable.
+
+---
+
 ## [4.0.3] — Windows 4SUPER Preview
 
 ### Added

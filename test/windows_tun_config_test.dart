@@ -11,6 +11,7 @@ void main() {
       final inbound = (config['inbounds'] as List).single as Map;
       final settings = inbound['settings'] as Map;
       expect(inbound['protocol'], 'tun');
+      expect(settings['userLevel'], 0);
       expect(settings['autoSystemRoutingTable'], <String>['0.0.0.0/0', '::/0']);
       expect(settings['autoOutboundsInterface'], 'auto');
       expect(settings['name'], 'hesamvoid');

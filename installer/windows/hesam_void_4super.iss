@@ -1,5 +1,5 @@
 #define AppName "Hesam Void 4SUPER"
-#define AppVersion "4.0.3"
+#define AppVersion "4.0.4"
 #define AppPublisher "Hesam"
 #define AppExeName "hesam_void.exe"
 #define BuildOutput "..\..\build\windows\x64\runner\Release"

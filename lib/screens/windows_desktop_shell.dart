@@ -1188,7 +1188,7 @@ class _FailureHint extends StatelessWidget {
       color: const Color(0xFFFF7B86).withValues(alpha: .11),
       borderRadius: BorderRadius.circular(12),
     ),
-    child: Text(
+    child: SelectableText(
       text,
       style: const TextStyle(
         color: Color(0xFFFFBBC2),

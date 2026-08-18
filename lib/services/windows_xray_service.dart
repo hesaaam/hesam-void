@@ -35,27 +35,17 @@ class WindowsXrayService extends ChangeNotifier {
 
   bool get isSupported => !kIsWeb && Platform.isWindows;
 
-  /// Performs a syntax-only validation with the bundled Xray executable.
-  /// It never connects to the remote endpoint.
+  /// Validates and writes the generated configuration without starting Xray.
+  /// `xray run -test` is not a syntax-only probe for TUN: it attempts to open
+  /// the adapter, which caused a false failure before the real process started.
   Future<WindowsValidationResult> validate(VpnConfig config) async {
     if (!isSupported) {
       return const WindowsValidationResult.unsupported();
     }
 
     try {
-      final files = await _prepareRuntimeFiles(config);
-      final result = await Process.run(
-        files.xray.path,
-        <String>['run', '-test', '-c', files.config.path],
-        workingDirectory: files.runtimeDirectory.path,
-        runInShell: false,
-      );
-      if (result.exitCode == 0) {
-        return const WindowsValidationResult.valid();
-      }
-      return WindowsValidationResult.invalid(
-        _safeNativeMessage('${result.stderr}\n${result.stdout}'),
-      );
+      await _prepareRuntimeFiles(config);
+      return const WindowsValidationResult.valid();
     } catch (error) {
       return WindowsValidationResult.invalid(_safeNativeMessage('$error'));
     }
@@ -80,19 +70,10 @@ class WindowsXrayService extends ChangeNotifier {
     _setState(WindowsConnectionState.starting, 'Preparing protected route…');
 
     try {
+      // A TUN configuration can only be validated by the elevated process
+      // that owns the adapter. Start one managed Core process directly instead
+      // of running a second `-test` process that would compete for the adapter.
       final files = await _prepareRuntimeFiles(config);
-      final validation = await Process.run(
-        files.xray.path,
-        <String>['run', '-test', '-c', files.config.path],
-        workingDirectory: files.runtimeDirectory.path,
-        runInShell: false,
-      );
-      if (validation.exitCode != 0) {
-        throw StateError(
-          _safeNativeMessage('${validation.stderr}\n${validation.stdout}'),
-        );
-      }
-
       final process = await Process.start(
         files.xray.path,
         <String>['run', '-c', files.config.path],
@@ -121,10 +102,10 @@ class WindowsXrayService extends ChangeNotifier {
         }),
       );
 
-      // A successful syntax validation plus a surviving native process means
-      // the local TUN controller has accepted the profile. No busy loop or
-      // periodic probe is started; this keeps idle CPU usage near zero.
-      await Future<void>.delayed(const Duration(milliseconds: 850));
+      // A surviving elevated Core process means the local TUN controller has
+      // accepted the profile. No busy loop or periodic probe is started; this
+      // keeps idle CPU usage near zero.
+      await Future<void>.delayed(const Duration(milliseconds: 1200));
       if (identical(process, _process)) {
         _setState(WindowsConnectionState.connected, 'TUN route is active');
       }
@@ -252,8 +233,8 @@ class WindowsXrayService extends ChangeNotifier {
     if (normalized.isEmpty) return 'Windows Core could not start.';
     // Native diagnostics may echo a remote address. Keep desktop errors useful
     // but never surface an unbounded raw log in the UI.
-    return normalized.length > 220
-        ? '${normalized.substring(0, 217)}…'
+    return normalized.length > 700
+        ? '${normalized.substring(0, 697)}…'
         : normalized;
   }
 }
@@ -277,6 +258,7 @@ Map<String, dynamic> buildWindowsTunConfiguration(String rawUrl) {
         'mtu': 1500,
         'gateway': <String>['172.27.0.1/30', 'fd00:4::1/126'],
         'dns': <String>['1.1.1.1', '1.0.0.1'],
+        'userLevel': 0,
         'autoSystemRoutingTable': <String>['0.0.0.0/0', '::/0'],
         // Prevent the Xray upstream itself from being sent into the new TUN.
         'autoOutboundsInterface': 'auto',
