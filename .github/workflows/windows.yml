@@ -14,9 +14,7 @@ permissions:
 jobs:
   build-windows:
     name: Build Windows 4SUPER
-    # Flutter 3.35.4 selects the VS2019 CMake generator; use the matching
-    # GitHub-hosted image instead of letting windows-latest resolve to VS2022.
-    runs-on: windows-2019
+    runs-on: windows-latest
     timeout-minutes: 35
 
     steps:
@@ -29,6 +27,19 @@ jobs:
           flutter-version: '3.35.4'
           channel: stable
           cache: true
+
+      # Flutter 3.35.4 falls back to VS2019 when its detector cannot parse a
+      # newer instance. Patch only the cached SDK in this ephemeral runner so
+      # CMake selects the VS2022 toolchain available on windows-latest.
+      - name: Align Flutter CMake fallback with VS2022 runner
+        shell: pwsh
+        run: |
+          $tool = Join-Path $env:FLUTTER_ROOT 'packages\flutter_tools\lib\src\windows\visual_studio.dart'
+          $content = Get-Content -Raw $tool
+          $content = $content.Replace("_ => 'Visual Studio 16 2019'", "_ => 'Visual Studio 17 2022'")
+          Set-Content -NoNewline -Path $tool -Value $content
+          Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:FLUTTER_ROOT 'bin\cache\flutter_tools.snapshot')
+          flutter --version
 
       - name: Fetch signed Xray and Wintun runtime
         shell: pwsh
