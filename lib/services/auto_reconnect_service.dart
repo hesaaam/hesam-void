@@ -35,6 +35,7 @@ class AutoReconnectService extends ChangeNotifier {
   int _totalReconnects = 0;
   int _totalFailovers = 0;
   int _currentServerIndex = 0;
+  int _failedHealthChecks = 0;
   List<VpnConfig> _serverQueue = <VpnConfig>[];
   Timer? _reconnectTimer;
   Timer? _healthCheckTimer;
@@ -160,9 +161,13 @@ class AutoReconnectService extends ChangeNotifier {
 
     switch (service.status) {
       case VpnStatus.connected:
+        // Only react to the transition; the timer must not be restarted by
+        // repeated notifications or the periodic check would never run.
+        if (_hasConnectedThisSession && !_isReconnecting) return;
         _hasConnectedThisSession = true;
         if (_isReconnecting) _totalReconnects++;
         _cancelRecovery(resetRetries: true);
+        _failedHealthChecks = 0;
         _restartHealthCheck();
         notifyListeners();
       case VpnStatus.disconnected:
@@ -197,7 +202,17 @@ class AutoReconnectService extends ChangeNotifier {
     if (!_enabled || service == null || !service.isConnected || _isReconnecting)
       return;
     final delay = await service.getConnectedServerDelay();
-    if (delay < 0 || delay > 5000) _scheduleRecovery();
+    if (delay > 0 && delay <= 5000) {
+      _failedHealthChecks = 0;
+      return;
+    }
+    // One slow sample is common on mobile networks; recover only when the
+    // route fails twice in a row.
+    _failedHealthChecks++;
+    if (_failedHealthChecks >= 2) {
+      _failedHealthChecks = 0;
+      _scheduleRecovery();
+    }
   }
 
   void _scheduleRecovery() {

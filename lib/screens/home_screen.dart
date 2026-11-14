@@ -10,6 +10,8 @@ import '../services/auto_reconnect_service.dart';
 import '../services/connection_health_service.dart';
 import '../services/profile_workspace_service.dart';
 import '../services/experience_preferences_service.dart';
+import '../services/connection_error_explainer.dart';
+import '../services/smart_connect_service.dart';
 import '../utils/app_theme.dart';
 import '../utils/theme_manager.dart';
 import '../widgets/animated_background.dart';
@@ -44,6 +46,8 @@ class _HomeScreenState extends State<HomeScreen>
   final ProfileWorkspaceService _profileWorkspace = ProfileWorkspaceService();
   final ExperiencePreferencesService _experiencePreferences =
       ExperiencePreferencesService();
+  final SmartConnectService _smartConnect = SmartConnectService();
+  VpnStatus? _lastHapticStatus;
 
   // Track if showing advanced stats
   bool _showAdvancedStats = false;
@@ -69,6 +73,13 @@ class _HomeScreenState extends State<HomeScreen>
         _vpnService,
         onFailover: configProvider.selectConfig,
       );
+      final restored = configProvider.selectedConfig;
+      if (restored != null) {
+        _autoReconnectService.setServerQueue(
+          configProvider.configs,
+          activeConfigId: restored.id,
+        );
+      }
       if (mounted) setState(() {});
       if (!_experiencePreferences.hasSeenSuperTour) {
         Future<void>.delayed(const Duration(milliseconds: 450), () {
@@ -84,26 +95,34 @@ class _HomeScreenState extends State<HomeScreen>
     _themeManager.addListener(_onThemeChanged);
     _profileWorkspace.addListener(_onThemeChanged);
     _experiencePreferences.addListener(_onThemeChanged);
+    _smartConnect.addListener(_onThemeChanged);
   }
 
   void _onVpnStatusChanged() {
-    if (mounted) {
-      setState(() {});
+    if (!mounted) return;
+    setState(() {});
 
-      // Trigger haptic feedback based on status
-      switch (_vpnService.status) {
-        case VpnStatus.connected:
-          _hapticService.onConnectionEstablished();
-          break;
-        case VpnStatus.disconnected:
-          _hapticService.onDisconnect();
-          break;
-        case VpnStatus.error:
-          _hapticService.onError();
-          break;
-        default:
-          break;
-      }
+    // Haptics belong to state transitions only. The engine reports its state
+    // every second, so reacting to every notification would vibrate
+    // continuously while connected.
+    final status = _vpnService.status;
+    if (status == _lastHapticStatus) return;
+    final previous = _lastHapticStatus;
+    _lastHapticStatus = status;
+    if (previous == null && status == VpnStatus.disconnected) return;
+    // Smart Connect drives its own feedback while it tries several routes.
+    if (_smartConnect.isRunning) return;
+
+    switch (status) {
+      case VpnStatus.connected:
+        _hapticService.onConnectionEstablished();
+      case VpnStatus.disconnected:
+        _hapticService.onDisconnect();
+      case VpnStatus.error:
+        _hapticService.onError();
+      case VpnStatus.connecting:
+      case VpnStatus.disconnecting:
+        break;
     }
   }
 
@@ -118,6 +137,7 @@ class _HomeScreenState extends State<HomeScreen>
     _themeManager.removeListener(_onThemeChanged);
     _profileWorkspace.removeListener(_onThemeChanged);
     _experiencePreferences.removeListener(_onThemeChanged);
+    _smartConnect.removeListener(_onThemeChanged);
     super.dispose();
   }
 
@@ -129,6 +149,7 @@ class _HomeScreenState extends State<HomeScreen>
       backgroundColor: theme.backgroundColor,
       body: AnimatedBackground(
         primaryColor: theme.primaryColor,
+        animate: !_experiencePreferences.reduceMotion,
         child: SafeArea(
           child: Column(
             children: [
@@ -389,40 +410,65 @@ class _HomeScreenState extends State<HomeScreen>
           ),
           child: Column(
             children: [
-              AliveSignalCanvas(
-                status: _vpnService.status,
-                config: selectedConfig ?? _vpnService.currentConfig,
-                stats: _vpnService.stats,
-                accentColor: theme.primaryColor,
-                surfaceColor: theme.surfaceColor,
-                textColor: theme.textColor,
-                onPrimaryAction: () {
-                  _hapticService.onConnect();
-                  if (!_vpnService.isConnected && selectedConfig == null) {
+              ValueListenableBuilder<VpnStats>(
+                valueListenable: _vpnService.statsListenable,
+                builder: (context, stats, _) => AliveSignalCanvas(
+                  status: _vpnService.status,
+                  config: selectedConfig ?? _vpnService.currentConfig,
+                  stats: stats,
+                  accentColor: theme.primaryColor,
+                  surfaceColor: theme.surfaceColor,
+                  textColor: theme.textColor,
+                  smartActive: _smartConnect.isRunning,
+                  smartHeadline: _smartConnect.headline,
+                  smartDetail: _smartConnect.message,
+                  smartProgress: _smartProgressValue,
+                  onSmartConnect: provider.hasConfigs
+                      ? () => _runSmartConnect(provider, theme)
+                      : null,
+                  onCancelSmart: () {
+                    _hapticService.selection();
+                    _smartConnect.cancel();
+                  },
+                  onPrimaryAction: () {
+                    _hapticService.onConnect();
+                    if (!_vpnService.isConnected && selectedConfig == null) {
+                      if (provider.hasConfigs) {
+                        _runSmartConnect(provider, theme);
+                      } else {
+                        _showImportDialog(context);
+                      }
+                      return;
+                    }
+                    _handleConnect(provider);
+                  },
+                  onChooseRoute: () {
+                    _hapticService.selection();
                     _showQuickConnect(provider, theme);
-                    return;
-                  }
-                  _handleConnect(provider);
-                },
-                onChooseRoute: () {
-                  _hapticService.selection();
-                  _showQuickConnect(provider, theme);
-                },
-                onOpenStory: () {
-                  _hapticService.selection();
-                  _showConnectionStory(provider, theme);
-                },
-                reduceMotion: _experiencePreferences.reduceMotion,
-                disableMotion: _experiencePreferences.disableMotion,
+                  },
+                  onOpenStory: () {
+                    _hapticService.selection();
+                    _showConnectionStory(provider, theme);
+                  },
+                  reduceMotion: _experiencePreferences.reduceMotion,
+                  disableMotion: _experiencePreferences.disableMotion,
+                ),
               ),
               const SizedBox(height: 16),
               _buildSuperContextStrip(provider, theme),
+
+              if (_smartConnect.phase == SmartConnectPhase.failed ||
+                  _smartConnect.phase == SmartConnectPhase.succeeded) ...[
+                const SizedBox(height: 16),
+                _buildSmartResult(theme),
+              ],
+
               const SizedBox(height: 20),
 
-              // Tunnel Active Badge (when connected) - Moved outside stats
+              // Proof that traffic really passes the tunnel.
               if (_vpnService.isConnected) ...[
+                _buildTunnelCheckBadge(provider, theme),
                 const SizedBox(height: 16),
-                _buildTunnelActiveBadge(theme),
               ],
 
               // Connection Stats (when connected)
@@ -482,10 +528,13 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                   )
                 else
-                  // Simple stats
-                  ConnectionStats(
-                    stats: _vpnService.stats,
-                    primaryColor: theme.primaryColor,
+                  // Simple stats, rebuilt only by the live stats ticks.
+                  ValueListenableBuilder<VpnStats>(
+                    valueListenable: _vpnService.statsListenable,
+                    builder: (context, stats, _) => ConnectionStats(
+                      stats: stats,
+                      primaryColor: theme.primaryColor,
+                    ),
                   ),
               ],
 
@@ -540,38 +589,9 @@ class _HomeScreenState extends State<HomeScreen>
                   ),
                 ),
 
-              // Error message
-              if (_vpnService.errorMessage != null)
-                Container(
-                      margin: const EdgeInsets.only(top: 20),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.red.withValues(alpha: 0.3),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.error_outline, color: Colors.red),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              _vpnService.errorMessage!,
-                              style: const TextStyle(
-                                color: Colors.red,
-                                fontSize: 12,
-                                fontFamily: 'JetBrainsMono',
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                    .animate()
-                    .fadeIn(duration: 300.ms)
-                    .shake(duration: 500.ms, hz: 2),
+              // Error message, explained in plain language.
+              if (_vpnService.errorMessage != null && !_smartConnect.isRunning)
+                _buildErrorCard(provider, theme),
             ],
           ),
         );
@@ -621,15 +641,10 @@ class _HomeScreenState extends State<HomeScreen>
         );
         _vpnService.connect(config);
       },
-      onRunChecks: () async {
-        await provider.testAllPings();
-        if (!mounted) return;
-        _showSnackBar(
-          'Local health checks refreshed',
-          icon: Icons.speed_rounded,
-          color: theme.primaryColor,
-          theme: theme,
-        );
+      onRunChecks: () => _runHealthChecks(provider, theme),
+      onSmartConnect: () {
+        Navigator.of(context).pop();
+        _runSmartConnect(provider, theme);
       },
     );
   }
@@ -822,7 +837,7 @@ class _HomeScreenState extends State<HomeScreen>
             ),
             const SizedBox(height: 8),
             Text(
-              'Go to SERVERS tab to add your first config',
+              'Paste a link or scan a QR code to add your first route',
               style: TextStyle(
                 color: theme.textColor.withValues(alpha: 0.5),
                 fontSize: 12,
@@ -832,10 +847,7 @@ class _HomeScreenState extends State<HomeScreen>
             ),
             const SizedBox(height: 16),
             ElevatedButton.icon(
-              onPressed: () {
-                _hapticService.selection();
-                _tabController.animateTo(1);
-              },
+              onPressed: () => _showImportDialog(context),
               icon: const Icon(Icons.add_rounded),
               label: const Text('ADD SERVER'),
               style: ElevatedButton.styleFrom(
@@ -1015,9 +1027,7 @@ class _HomeScreenState extends State<HomeScreen>
                 itemCount: provider.configs.length,
                 itemBuilder: (context, index) {
                   final config = provider.configs[index];
-                  final isTesting =
-                      provider.isTestingPing &&
-                      provider.testingConfigId == config.id;
+                  final isTesting = provider.isConfigTesting(config.id);
 
                   final snapshot = ConnectionHealthService().snapshotFor(
                     config.id,
@@ -1175,16 +1185,15 @@ class _HomeScreenState extends State<HomeScreen>
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: provider.isTestingPing
+                  onPressed: provider.isTestingPing || _smartConnect.isRunning
                       ? null
-                      : () {
-                          _hapticService.selection();
-                          provider.testAllPings();
-                        },
+                      : () => _runHealthChecks(provider, theme),
                   icon: const Icon(Icons.speed_rounded, size: 17),
                   label: Text(
                     provider.isTestingPing
-                        ? 'CHECKING ROUTES…'
+                        ? (provider.checkTotal > 0
+                              ? 'CHECKING ${provider.checkCompleted}/${provider.checkTotal}'
+                              : 'CHECKING ROUTES…')
                         : 'RUN HEALTH CHECKS',
                   ),
                   style: OutlinedButton.styleFrom(
@@ -1488,45 +1497,253 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildTunnelActiveBadge(AppThemeData theme) {
+  double? get _smartProgressValue {
+    final total = _smartConnect.progressTotal;
+    if (_smartConnect.phase == SmartConnectPhase.scanning ||
+        _smartConnect.phase == SmartConnectPhase.measuring) {
+      return total == 0 ? null : _smartConnect.progressDone / total;
+    }
+    return null;
+  }
+
+  Future<void> _runSmartConnect(
+    ConfigProvider provider,
+    AppThemeData theme,
+  ) async {
+    if (_smartConnect.isRunning) return;
+    _hapticService.selection();
+    final connected = await _smartConnect.run(
+      configs: provider.configs,
+      vpn: _vpnService,
+      autoReconnect: _autoReconnectService,
+      onSelect: provider.selectConfig,
+      onMeasured: provider.applyMeasurements,
+    );
+    if (!mounted) return;
+    if (connected != null) {
+      _hapticService.success();
+    } else if (_smartConnect.phase == SmartConnectPhase.failed) {
+      // The Smart Connect summary replaces the last per-route error.
+      _vpnService.clearError();
+      _hapticService.error();
+    }
+  }
+
+  Future<void> _runHealthChecks(
+    ConfigProvider provider,
+    AppThemeData theme,
+  ) async {
+    _hapticService.selection();
+    final results = await provider.testAllPings();
+    if (!mounted || results.isEmpty) return;
+    final answered = results.values.where((ping) => ping != null).length;
+    _showSnackBar(
+      '$answered of ${results.length} routes answered',
+      icon: answered == 0 ? Icons.portable_wifi_off_rounded : Icons.speed,
+      color: answered == 0 ? Colors.orange : theme.primaryColor,
+      theme: theme,
+    );
+  }
+
+  Widget _buildSmartResult(AppThemeData theme) {
+    final succeeded = _smartConnect.phase == SmartConnectPhase.succeeded;
+    final color = succeeded ? const Color(0xFF20E870) : Colors.orange;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
       decoration: BoxDecoration(
-        color: theme.primaryColor.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.primaryColor.withValues(alpha: 0.3)),
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: theme.primaryColor,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: theme.primaryColor.withValues(alpha: 0.5),
-                  blurRadius: 8,
+          Icon(
+            succeeded ? Icons.auto_awesome_rounded : Icons.route_rounded,
+            color: color,
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _smartConnect.headline,
+                  style: TextStyle(
+                    color: color,
+                    fontFamily: 'JetBrainsMono',
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  _smartConnect.message,
+                  style: TextStyle(
+                    color: theme.textColor.withValues(alpha: 0.7),
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 10),
-          Text(
-            'TUNNEL ACTIVE',
-            style: TextStyle(
-              color: theme.primaryColor,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              fontFamily: 'JetBrainsMono',
-              letterSpacing: 1,
+          IconButton(
+            tooltip: 'Dismiss',
+            onPressed: _smartConnect.dismiss,
+            icon: Icon(
+              Icons.close_rounded,
+              size: 18,
+              color: theme.textColor.withValues(alpha: 0.6),
             ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildTunnelCheckBadge(ConfigProvider provider, AppThemeData theme) {
+    final check = _vpnService.tunnelCheck;
+    late final Color color;
+    late final IconData icon;
+    late final String label;
+    switch (check) {
+      case TunnelCheck.verified:
+        color = const Color(0xFF20E870);
+        icon = Icons.verified_rounded;
+        label = _vpnService.tunnelLatencyMs == null
+            ? 'Internet verified'
+            : 'Internet verified • ${_vpnService.tunnelLatencyMs} ms';
+      case TunnelCheck.failed:
+        color = Colors.orange;
+        icon = Icons.warning_amber_rounded;
+        label = 'Tunnel is up, but no internet';
+      case TunnelCheck.checking:
+      case TunnelCheck.idle:
+        color = theme.primaryColor;
+        icon = Icons.radar_rounded;
+        label = 'Checking internet access…';
+    }
+
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (check == TunnelCheck.checking || check == TunnelCheck.idle)
+              SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2, color: color),
+              )
+            else
+              Icon(icon, color: color, size: 18),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'JetBrainsMono',
+                ),
+              ),
+            ),
+            if (check == TunnelCheck.failed) ...[
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: () => _runSmartConnect(provider, theme),
+                child: const Text('TRY ANOTHER'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorCard(ConfigProvider provider, AppThemeData theme) {
+    final insight = ConnectionErrorExplainer.explain(_vpnService.errorMessage);
+    const color = Color(0xFFFF5C6C);
+    return Container(
+      margin: const EdgeInsets.only(top: 20),
+      padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.32)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(top: 2),
+                child: Icon(Icons.error_outline, color: color, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      insight.title,
+                      style: const TextStyle(
+                        color: color,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      insight.hint,
+                      style: TextStyle(
+                        color: theme.textColor.withValues(alpha: 0.75),
+                        fontSize: 12.5,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Dismiss',
+                onPressed: _vpnService.clearError,
+                icon: Icon(
+                  Icons.close_rounded,
+                  size: 18,
+                  color: theme.textColor.withValues(alpha: 0.6),
+                ),
+              ),
+            ],
+          ),
+          Wrap(
+            spacing: 4,
+            children: [
+              if (insight.suggestOtherRoute && provider.configs.length > 1)
+                TextButton.icon(
+                  onPressed: () => _runSmartConnect(provider, theme),
+                  icon: const Icon(Icons.auto_awesome_rounded, size: 16),
+                  label: const Text('FIND A WORKING ROUTE'),
+                ),
+              TextButton(
+                onPressed: () => _showConnectionStory(provider, theme),
+                child: const Text('DETAILS'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ).animate().fadeIn(duration: 250.ms);
   }
 
   void _showSnackBar(

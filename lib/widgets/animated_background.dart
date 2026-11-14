@@ -1,51 +1,92 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import '../utils/app_theme.dart';
 
-/// Animated Matrix-style background with falling characters
+/// Matrix-style background with falling characters.
+///
+/// The effect sits behind a dark overlay, so it is tuned for low cost: glyphs
+/// are laid out once and cached, frames are capped at ~30 fps, and the
+/// animation stops entirely when [animate] is false (reduced or no motion).
 class AnimatedBackground extends StatefulWidget {
   final Widget child;
   final Color? primaryColor;
+  final bool animate;
 
-  const AnimatedBackground({super.key, required this.child, this.primaryColor});
+  const AnimatedBackground({
+    super.key,
+    required this.child,
+    this.primaryColor,
+    this.animate = true,
+  });
 
   @override
   State<AnimatedBackground> createState() => _AnimatedBackgroundState();
 }
 
 class _AnimatedBackgroundState extends State<AnimatedBackground>
-    with TickerProviderStateMixin {
-  late AnimationController _controller;
+    with SingleTickerProviderStateMixin {
+  static const _frameInterval = Duration(milliseconds: 33);
+
+  late final Ticker _ticker;
+  final ValueNotifier<int> _frame = ValueNotifier<int>(0);
   final List<MatrixColumn> _columns = [];
   final Random _random = Random();
+  Size _size = Size.zero;
+  Duration _lastTick = Duration.zero;
 
   Color get _primaryColor => widget.primaryColor ?? AppTheme.primaryGreen;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 16),
-    )..repeat();
+    _ticker = createTicker(_onTick);
+    if (widget.animate) _ticker.start();
+  }
+
+  @override
+  void didUpdateWidget(covariant AnimatedBackground oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.animate && !_ticker.isActive) {
+      _lastTick = Duration.zero;
+      _ticker.start();
+    } else if (!widget.animate && _ticker.isActive) {
+      _ticker.stop();
+    }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _ticker.dispose();
+    _frame.dispose();
     super.dispose();
   }
 
-  void _initColumns(Size size) {
-    if (_columns.isNotEmpty) return;
+  void _onTick(Duration elapsed) {
+    final delta = elapsed - _lastTick;
+    if (_lastTick != Duration.zero && delta < _frameInterval) return;
+    // Speeds are expressed per 60 fps frame; scale by the real elapsed time.
+    final steps = _lastTick == Duration.zero
+        ? 1.0
+        : delta.inMicroseconds / 16667;
+    _lastTick = elapsed;
+    for (final column in _columns) {
+      column.advance(steps, _size.height, _random);
+    }
+    _frame.value++;
+  }
 
+  void _initColumns(Size size) {
+    if (_columns.isNotEmpty && size == _size) return;
+    _size = size;
+    _columns.clear();
     final columnCount = (size.width / 25).floor();
     for (int i = 0; i < columnCount; i++) {
       _columns.add(
         MatrixColumn(
           x: i * 25.0,
           speed: 1 + _random.nextDouble() * 3,
-          length: 5 + _random.nextInt(15),
+          glyphs: MatrixColumn.randomGlyphs(5 + _random.nextInt(15), _random),
           startY: -_random.nextDouble() * size.height * 2,
         ),
       );
@@ -60,25 +101,18 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
 
         return Stack(
           children: [
-            // Dark background
             Container(color: AppTheme.backgroundDark),
-
-            // Matrix rain effect
-            AnimatedBuilder(
-              animation: _controller,
-              builder: (context, _) {
-                return CustomPaint(
-                  size: Size(constraints.maxWidth, constraints.maxHeight),
-                  painter: MatrixPainter(
-                    columns: _columns,
-                    maxHeight: constraints.maxHeight,
-                    primaryColor: _primaryColor,
-                  ),
-                );
-              },
+            RepaintBoundary(
+              child: CustomPaint(
+                size: Size(constraints.maxWidth, constraints.maxHeight),
+                painter: MatrixPainter(
+                  columns: _columns,
+                  maxHeight: constraints.maxHeight,
+                  primaryColor: _primaryColor,
+                  repaint: _frame,
+                ),
+              ),
             ),
-
-            // Gradient overlay
             Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -92,8 +126,6 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
                 ),
               ),
             ),
-
-            // Child content
             widget.child,
           ],
         );
@@ -103,68 +135,100 @@ class _AnimatedBackgroundState extends State<AnimatedBackground>
 }
 
 class MatrixColumn {
-  double x;
+  static const String chars = '01アイウエオカキクケコサシスセソタチツテト';
+
+  final double x;
   double speed;
-  int length;
+  List<int> glyphs;
   double startY;
 
   MatrixColumn({
     required this.x,
     required this.speed,
-    required this.length,
+    required this.glyphs,
     required this.startY,
   });
+
+  int get length => glyphs.length;
+
+  static List<int> randomGlyphs(int length, Random random) =>
+      List<int>.generate(length, (_) => random.nextInt(chars.length));
+
+  void advance(double steps, double maxHeight, Random random) {
+    startY += speed * steps;
+    if (startY > maxHeight + length * 20) {
+      startY = -length * 20.0;
+      speed = 1 + random.nextDouble() * 3;
+      glyphs = randomGlyphs(glyphs.length, random);
+    }
+  }
 }
 
 class MatrixPainter extends CustomPainter {
+  static const int _maxLength = 20;
+  static Color? _cachedColor;
+  static List<List<TextPainter>>? _glyphCache;
+
   final List<MatrixColumn> columns;
   final double maxHeight;
   final Color primaryColor;
-  static const String chars = '01アイウエオカキクケコサシスセソタチツテト';
-  final Random _random = Random();
 
   MatrixPainter({
     required this.columns,
     required this.maxHeight,
     required this.primaryColor,
+    super.repaint,
   });
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    for (final column in columns) {
-      column.startY += column.speed;
-
-      if (column.startY > maxHeight + column.length * 20) {
-        column.startY = -column.length * 20.0;
-        column.speed = 1 + _random.nextDouble() * 3;
+  /// TextPainters are laid out once per glyph and fade step, then reused.
+  static List<List<TextPainter>> _glyphsFor(Color color) {
+    if (_glyphCache != null && _cachedColor == color) return _glyphCache!;
+    for (final row in _glyphCache ?? const <List<TextPainter>>[]) {
+      for (final painter in row) {
+        painter.dispose();
       }
-
-      for (int i = 0; i < column.length; i++) {
-        final y = column.startY + i * 20;
-        if (y < 0 || y > maxHeight) continue;
-
-        final opacity = (1 - i / column.length) * 0.15;
-        final paint = Paint()..color = primaryColor.withValues(alpha: opacity);
-
-        final textPainter = TextPainter(
+    }
+    _cachedColor = color;
+    _glyphCache = List.generate(_maxLength, (step) {
+      final opacity = (1 - step / _maxLength) * 0.15;
+      return List.generate(MatrixColumn.chars.length, (index) {
+        return TextPainter(
           text: TextSpan(
-            text: chars[_random.nextInt(chars.length)],
+            text: MatrixColumn.chars[index],
             style: TextStyle(
-              color: paint.color,
+              color: color.withValues(alpha: opacity),
               fontSize: 14,
               fontFamily: 'JetBrainsMono',
             ),
           ),
           textDirection: TextDirection.ltr,
+        )..layout();
+      });
+    });
+    return _glyphCache!;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cache = _glyphsFor(primaryColor);
+    for (final column in columns) {
+      for (int i = 0; i < column.length; i++) {
+        final y = column.startY + i * 20;
+        if (y < 0 || y > maxHeight) continue;
+        final step = (i * _maxLength / column.length).floor().clamp(
+          0,
+          _maxLength - 1,
         );
-        textPainter.layout();
-        textPainter.paint(canvas, Offset(column.x, y));
+        cache[step][column.glyphs[i]].paint(canvas, Offset(column.x, y));
       }
     }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(covariant MatrixPainter oldDelegate) =>
+      oldDelegate.primaryColor != primaryColor ||
+      oldDelegate.maxHeight != maxHeight ||
+      !identical(oldDelegate.columns, columns);
 }
 
 /// Glowing container with animation

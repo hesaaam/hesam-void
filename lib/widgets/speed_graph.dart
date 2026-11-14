@@ -47,8 +47,8 @@ class _SpeedGraphState extends State<SpeedGraph>
   void didUpdateWidget(SpeedGraph oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // Add new data points
-    if (widget.isConnected) {
+    // Add a point only for a new stats sample, not for unrelated rebuilds.
+    if (widget.isConnected && !identical(widget.stats, oldWidget.stats)) {
       _downloadHistory.removeAt(0);
       _downloadHistory.add(widget.stats.downloadSpeed.toDouble());
 
@@ -449,16 +449,17 @@ class _SpeedGraphWidgetState extends State<SpeedGraphWidget> {
   @override
   void initState() {
     super.initState();
-    widget.vpnService.addListener(_onVpnChanged);
+    // Live traffic counters tick once per second on their own notifier.
+    widget.vpnService.statsListenable.addListener(_onStatsChanged);
   }
 
-  void _onVpnChanged() {
+  void _onStatsChanged() {
     if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
-    widget.vpnService.removeListener(_onVpnChanged);
+    widget.vpnService.statsListenable.removeListener(_onStatsChanged);
     super.dispose();
   }
 

@@ -271,6 +271,34 @@ class _SettingsScreenState extends State<SettingsScreen>
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.orange.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.orange.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.info_outline, color: Colors.orange, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Optimization and anti-filtering options are saved, but '
+                  'they are not applied to connections yet. Auto-reconnect '
+                  'settings below are active.',
+                  style: TextStyle(
+                    color: theme.textColor.withValues(alpha: 0.8),
+                    fontSize: 12.5,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
         _buildSectionHeader('CONFIG OPTIMIZATION', theme),
         const SizedBox(height: 12),
         _buildSettingCard(

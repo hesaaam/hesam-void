@@ -11,6 +11,13 @@ import 'connection_health_service.dart';
 /// VPN Connection States
 enum VpnStatus { disconnected, connecting, connected, disconnecting, error }
 
+/// Result of the post-connect check that traffic really passes the tunnel.
+enum TunnelCheck { idle, checking, verified, failed }
+
+/// Error text recorded when the tunnel is up but no request passes through it.
+const String kTunnelNoInternetError =
+    'Connected, but no internet passed through the tunnel.';
+
 /// VPN Connection Statistics
 class VpnStats {
   final int uploadSpeed; // bytes per second
@@ -95,8 +102,19 @@ class VpnService extends ChangeNotifier {
 
   VpnStatus _status = VpnStatus.disconnected;
   VpnConfig? _currentConfig;
-  VpnStats _stats = VpnStats();
   String? _errorMessage;
+  TunnelCheck _tunnelCheck = TunnelCheck.idle;
+  int? _tunnelLatencyMs;
+  Future<bool>? _verification;
+  int _connectionGeneration = 0;
+  VoidCallback? _sshListener;
+
+  /// Live traffic statistics. They change every second while connected, so
+  /// they are published separately from [notifyListeners] to keep screens
+  /// that only care about the connection state from rebuilding every tick.
+  final ValueNotifier<VpnStats> statsListenable = ValueNotifier<VpnStats>(
+    VpnStats(),
+  );
   String? _coreVersion;
   bool _isInitialized = false;
   int? _sshProxyPort; // SSH proxy port when connected
@@ -105,8 +123,10 @@ class VpnService extends ChangeNotifier {
   // Getters
   VpnStatus get status => _status;
   VpnConfig? get currentConfig => _currentConfig;
-  VpnStats get stats => _stats;
+  VpnStats get stats => statsListenable.value;
   String? get errorMessage => _errorMessage;
+  TunnelCheck get tunnelCheck => _tunnelCheck;
+  int? get tunnelLatencyMs => _tunnelLatencyMs;
   String? get coreVersion => _coreVersion;
   bool get isInitialized => _isInitialized;
   bool get isConnected => _status == VpnStatus.connected;
@@ -161,58 +181,120 @@ class VpnService extends ChangeNotifier {
     }
   }
 
-  /// Handle V2Ray status changes from the core
+  /// Handle V2Ray status changes from the core.
+  ///
+  /// The native core reports its state every second together with traffic
+  /// counters. Only real state transitions are treated as events; repeated
+  /// ticks just refresh [statsListenable].
   void _onStatusChanged(V2RayStatus v2rayStatus) {
-    final wasConnected = _status == VpnStatus.connected;
-    if (kDebugMode) {
-      debugPrint('[VpnService] Status changed: ${v2rayStatus.state}');
-      debugPrint('[VpnService] Duration: ${v2rayStatus.duration}');
-      debugPrint(
-        '[VpnService] Upload: ${v2rayStatus.uploadSpeed} B/s, Download: ${v2rayStatus.downloadSpeed} B/s',
+    final previous = _status;
+
+    if (!isSshConnection) {
+      statsListenable.value = VpnStats(
+        uploadSpeed: v2rayStatus.uploadSpeed,
+        downloadSpeed: v2rayStatus.downloadSpeed,
+        totalUpload: v2rayStatus.upload,
+        totalDownload: v2rayStatus.download,
+        duration: v2rayStatus.duration,
       );
     }
 
-    // Update stats from V2Ray status
-    _stats = VpnStats(
-      uploadSpeed: v2rayStatus.uploadSpeed,
-      downloadSpeed: v2rayStatus.downloadSpeed,
-      totalUpload: v2rayStatus.upload,
-      totalDownload: v2rayStatus.download,
-      duration: v2rayStatus.duration,
-    );
-
-    // Map V2Ray state to our VpnStatus
+    VpnStatus next = previous;
     switch (v2rayStatus.state) {
       case 'CONNECTED':
-        _status = VpnStatus.connected;
-        _errorMessage = null;
-        final config = _currentConfig;
-        if (config != null) {
-          unawaited(ConnectionHealthService().recordConnected(config.id));
-        }
+        next = VpnStatus.connected;
         break;
       case 'DISCONNECTED':
       case 'STOPPED':
-        _status = VpnStatus.disconnected;
-        final config = _currentConfig;
-        final dropIsSuppressed =
-            _suppressDropRecordingUntil != null &&
-            DateTime.now().isBefore(_suppressDropRecordingUntil!);
-        if (wasConnected && config != null && !dropIsSuppressed) {
-          unawaited(ConnectionHealthService().recordDrop(config.id));
-        }
+        next = VpnStatus.disconnected;
         break;
       case 'CONNECTING':
-        _status = VpnStatus.connecting;
+        next = VpnStatus.connecting;
         break;
       default:
         if (kDebugMode) {
           debugPrint('[VpnService] Unknown state: ${v2rayStatus.state}');
         }
-        break;
+        return;
+    }
+
+    if (next == previous) return;
+    _status = next;
+
+    if (next == VpnStatus.connected) {
+      _errorMessage = null;
+      unawaited(verifyTunnel());
+    } else if (next == VpnStatus.disconnected) {
+      _resetTunnelCheck();
+      final config = _currentConfig;
+      final dropIsSuppressed =
+          _suppressDropRecordingUntil != null &&
+          DateTime.now().isBefore(_suppressDropRecordingUntil!);
+      if (previous == VpnStatus.connected &&
+          config != null &&
+          !dropIsSuppressed) {
+        unawaited(ConnectionHealthService().recordDrop(config.id));
+      }
     }
 
     notifyListeners();
+  }
+
+  /// Confirms that a request really travels through the running tunnel.
+  ///
+  /// A connected engine is not proof of a working route, so the result is
+  /// recorded in local health history and shown to the user.
+  Future<bool> verifyTunnel() {
+    return _verification ??= _runVerification().whenComplete(() {
+      _verification = null;
+    });
+  }
+
+  Future<bool> _runVerification() async {
+    final generation = _connectionGeneration;
+    final config = _currentConfig;
+    _tunnelCheck = TunnelCheck.checking;
+    _tunnelLatencyMs = null;
+    notifyListeners();
+
+    // Give the tunnel a moment to install routes before the first request.
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+
+    var delay = -1;
+    for (var attempt = 0; attempt < 2 && delay <= 0; attempt++) {
+      if (generation != _connectionGeneration || !isConnected) return false;
+      delay = await getConnectedServerDelay();
+      if (delay <= 0 && attempt == 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 900));
+      }
+    }
+
+    if (generation != _connectionGeneration || !isConnected) return false;
+
+    final verified = delay > 0;
+    _tunnelCheck = verified ? TunnelCheck.verified : TunnelCheck.failed;
+    _tunnelLatencyMs = verified ? delay : null;
+    if (config != null) {
+      unawaited(
+        verified
+            ? ConnectionHealthService().recordConnected(
+                config.id,
+                latencyMs: delay,
+              )
+            : ConnectionHealthService().recordFailure(
+                config.id,
+                kTunnelNoInternetError,
+              ),
+      );
+    }
+    notifyListeners();
+    return verified;
+  }
+
+  void _resetTunnelCheck() {
+    _connectionGeneration++;
+    _tunnelCheck = TunnelCheck.idle;
+    _tunnelLatencyMs = null;
   }
 
   /// Connect to VPN using config - FOLLOWS OFFICIAL flutter_v2ray EXAMPLE
@@ -235,16 +317,11 @@ class VpnService extends ChangeNotifier {
     }
 
     try {
+      _resetTunnelCheck();
       _status = VpnStatus.connecting;
       _currentConfig = config;
       _errorMessage = null;
       notifyListeners();
-
-      if (kDebugMode) {
-        debugPrint(
-          '[VpnService] Parsing config URL: ${config.rawUrl.substring(0, 50)}...',
-        );
-      }
 
       // CRITICAL: Use FlutterV2ray.parseFromURL to parse the config
       // This is the official way as per flutter_v2ray documentation
@@ -309,7 +386,9 @@ class VpnService extends ChangeNotifier {
   /// Connect to SSH server using dartssh2 + V2Ray VPN mode
   /// This creates SSH tunnel AND routes all device traffic through it
   Future<bool> _connectSsh(VpnConfig config) async {
+    final sshService = SshTunnelService();
     try {
+      _resetTunnelCheck();
       _status = VpnStatus.connecting;
       _currentConfig = config;
       _errorMessage = null;
@@ -317,9 +396,6 @@ class VpnService extends ChangeNotifier {
 
       if (kDebugMode) {
         debugPrint('[VpnService] SSH Config detected: ${config.name}');
-        debugPrint(
-          '[VpnService] Raw URL: ${config.rawUrl.substring(0, 50)}...',
-        );
       }
 
       // CRITICAL FIX: Parse SSH config directly from rawUrl for accurate credentials
@@ -401,13 +477,15 @@ class VpnService extends ChangeNotifier {
       }
 
       // Step 1: Start SSH tunnel (creates local SOCKS proxy)
-      final sshService = SshTunnelService();
       final sshConnected = await sshService.connect(sshConfig);
 
       if (!sshConnected) {
         _status = VpnStatus.error;
         _errorMessage = sshService.errorMessage ?? 'SSH connection failed';
         _sshProxyPort = null;
+        unawaited(
+          ConnectionHealthService().recordFailure(config.id, _errorMessage!),
+        );
         notifyListeners();
         return false;
       }
@@ -433,11 +511,6 @@ class VpnService extends ChangeNotifier {
 
       // Step 3: Create V2Ray config that uses SSH SOCKS proxy as outbound
       final v2rayConfig = _buildSshV2RayConfig(sshConfig, _sshProxyPort!);
-
-      if (kDebugMode) {
-        debugPrint('[VpnService] V2Ray config for SSH:');
-        debugPrint(v2rayConfig);
-      }
 
       // Step 4: Create bypass list that includes SSH server IP
       // CRITICAL: SSH server must bypass VPN to avoid circular connection!
@@ -476,6 +549,12 @@ class VpnService extends ChangeNotifier {
 
       return true;
     } catch (e) {
+      // Never leave an orphaned SSH session behind a failed VPN start.
+      _detachSshMonitor();
+      if (_sshProxyPort != null || sshService.isConnected) {
+        await sshService.disconnect();
+      }
+      _sshProxyPort = null;
       _status = VpnStatus.error;
       _errorMessage = 'SSH connection failed: $e';
       unawaited(
@@ -597,27 +676,35 @@ class VpnService extends ChangeNotifier {
     }
   }
 
-  /// Monitor SSH tunnel statistics
+  /// Monitor SSH tunnel statistics. Only one listener is kept at a time.
   void _monitorSshStats(SshTunnelService sshService) {
-    sshService.addListener(() {
+    _detachSshMonitor();
+    void listener() {
       if (sshService.isConnected) {
-        _stats = VpnStats(
+        statsListenable.value = VpnStats(
           uploadSpeed: 0, // SSH doesn't provide real-time speed
           downloadSpeed: 0,
           totalUpload: sshService.stats.uploadBytes,
           totalDownload: sshService.stats.downloadBytes,
           duration: sshService.stats.duration,
         );
-        notifyListeners();
-      } else if (sshService.status == SshStatus.disconnected) {
-        _status = VpnStatus.disconnected;
-        notifyListeners();
-      } else if (sshService.status == SshStatus.error) {
+      } else if (sshService.status == SshStatus.error &&
+          _status != VpnStatus.error) {
         _status = VpnStatus.error;
         _errorMessage = sshService.errorMessage;
+        _resetTunnelCheck();
         notifyListeners();
       }
-    });
+    }
+
+    sshService.addListener(listener);
+    _sshListener = listener;
+  }
+
+  void _detachSshMonitor() {
+    final listener = _sshListener;
+    if (listener != null) SshTunnelService().removeListener(listener);
+    _sshListener = null;
   }
 
   /// Disconnect VPN (and SSH if active)
@@ -625,6 +712,7 @@ class VpnService extends ChangeNotifier {
     if (kIsWeb || !_isInitialized) return;
 
     try {
+      _resetTunnelCheck();
       _status = VpnStatus.disconnecting;
       _suppressDropRecordingUntil = DateTime.now().add(
         const Duration(seconds: 3),
@@ -639,6 +727,7 @@ class VpnService extends ChangeNotifier {
       await flutterV2ray.stopV2Ray();
 
       // Also stop SSH tunnel if it was active
+      _detachSshMonitor();
       if (_sshProxyPort != null) {
         if (kDebugMode) {
           debugPrint('[VpnService] Stopping SSH tunnel...');
@@ -649,7 +738,7 @@ class VpnService extends ChangeNotifier {
       }
 
       _status = VpnStatus.disconnected;
-      _stats = VpnStats();
+      statsListenable.value = VpnStats();
 
       if (kDebugMode) {
         debugPrint('[VpnService] VPN stopped successfully');
@@ -675,9 +764,13 @@ class VpnService extends ChangeNotifier {
     }
   }
 
-  /// Get server delay/ping using flutter_v2ray built-in method
+  /// Measures a real request through a temporary engine for [config].
+  ///
+  /// Unlike a TCP ping this proves the profile can carry traffic. SSH profiles
+  /// are not supported by the engine probe and return -1.
   Future<int> getServerDelay(VpnConfig config) async {
-    if (kIsWeb || !_isInitialized) return -1;
+    if (kIsWeb || config.isSsh) return -1;
+    if (!_isInitialized && !await initialize()) return -1;
 
     try {
       // Parse the config URL
@@ -729,6 +822,8 @@ class VpnService extends ChangeNotifier {
   /// Dispose resources
   @override
   void dispose() {
+    _detachSshMonitor();
+    statsListenable.dispose();
     super.dispose();
   }
 }

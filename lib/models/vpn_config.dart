@@ -267,6 +267,7 @@ class VpnConfig extends HiveObject {
     bool? isActive,
     String? country,
     String? countryCode,
+    bool clearPing = false,
   }) {
     return VpnConfig(
       id: id ?? this.id,
@@ -287,7 +288,7 @@ class VpnConfig extends HiveObject {
       host: host ?? this.host,
       encryption: encryption ?? this.encryption,
       flow: flow ?? this.flow,
-      ping: ping ?? this.ping,
+      ping: clearPing ? null : (ping ?? this.ping),
       createdAt: createdAt ?? this.createdAt,
       lastTestedAt: lastTestedAt ?? this.lastTestedAt,
       isActive: isActive ?? this.isActive,

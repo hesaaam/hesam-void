@@ -12,17 +12,23 @@ import 'services/fragment_service.dart';
 import 'services/auto_reconnect_service.dart';
 import 'services/connection_health_service.dart';
 
+/// Opens local storage and services in parallel.
+///
+/// Runs behind the splash animation instead of before the first frame, so the
+/// app paints immediately. A failure is reported instead of leaving a blank
+/// screen.
+Future<void> bootstrapServices() async {
+  await Hive.initFlutter();
+  await Future.wait<void>([
+    ConfigOptimizerService().initialize(),
+    FragmentService().initialize(),
+    AutoReconnectService().initializeStorage(),
+    ConnectionHealthService().initialize(),
+  ]);
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Initialize Hive for local storage
-  await Hive.initFlutter();
-
-  // Initialize all services with persistent storage
-  await ConfigOptimizerService().initialize();
-  await FragmentService().initialize();
-  await AutoReconnectService().initializeStorage();
-  await ConnectionHealthService().initialize();
 
   // Set system UI overlay style for immersive dark theme
   SystemChrome.setSystemUIOverlayStyle(
@@ -35,10 +41,12 @@ void main() async {
   );
 
   // Lock orientation to portrait
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
+  unawaited(
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]),
+  );
 
   runApp(const HesamVoidApp());
 }
@@ -62,7 +70,10 @@ class HesamVoidApp extends StatelessWidget {
 
 /// Animated Splash Screen
 class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
+  /// Startup work to finish before leaving the splash. Tests can replace it.
+  final Future<void> Function() bootstrap;
+
+  const SplashScreen({super.key, this.bootstrap = bootstrapServices});
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -77,6 +88,8 @@ class _SplashScreenState extends State<SplashScreen>
   late Animation<double> _textOpacity;
   late Animation<Offset> _textSlide;
   final List<Timer> _sequenceTimers = <Timer>[];
+  static const _minimumSplash = Duration(milliseconds: 1100);
+  Object? _startupError;
 
   @override
   void initState() {
@@ -84,12 +97,12 @@ class _SplashScreenState extends State<SplashScreen>
 
     _logoController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 900),
     );
 
     _textController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 600),
     );
 
     _logoScale = Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -117,37 +130,38 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   void _startAnimations() {
+    _logoController.forward();
     _sequenceTimers.add(
-      Timer(const Duration(milliseconds: 300), () {
-        if (!mounted) return;
-        _logoController.forward();
-        _sequenceTimers.add(
-          Timer(const Duration(milliseconds: 800), () {
-            if (!mounted) return;
-            _textController.forward();
-            _sequenceTimers.add(
-              Timer(const Duration(milliseconds: 2000), () {
-                if (!mounted) return;
-                Navigator.pushReplacement(
-                  context,
-                  PageRouteBuilder(
-                    pageBuilder: (context, animation, secondaryAnimation) =>
-                        const HomeScreen(),
-                    transitionDuration: const Duration(milliseconds: 800),
-                    transitionsBuilder:
-                        (context, animation, secondaryAnimation, child) {
-                          return FadeTransition(
-                            opacity: animation,
-                            child: child,
-                          );
-                        },
-                  ),
-                );
-              }),
-            );
-          }),
-        );
+      Timer(const Duration(milliseconds: 350), () {
+        if (mounted) _textController.forward();
       }),
+    );
+    unawaited(_start());
+  }
+
+  Future<void> _start() async {
+    if (_startupError != null) setState(() => _startupError = null);
+    final minimum = Completer<void>();
+    _sequenceTimers.add(Timer(_minimumSplash, minimum.complete));
+    try {
+      await widget.bootstrap();
+      await minimum.future;
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _startupError = error);
+      return;
+    }
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            const HomeScreen(),
+        transitionDuration: const Duration(milliseconds: 450),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+      ),
     );
   }
 
@@ -254,7 +268,7 @@ class _SplashScreenState extends State<SplashScreen>
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            'Secure • Private • Free',
+                            'Local-first • Your own routes',
                             style: TextStyle(
                               color: AppTheme.textMuted,
                               fontSize: 14,
@@ -271,26 +285,56 @@ class _SplashScreenState extends State<SplashScreen>
 
               const SizedBox(height: 60),
 
-              // Loading indicator
-              AnimatedBuilder(
-                animation: _textController,
-                builder: (context, child) {
-                  return Opacity(
-                    opacity: _textOpacity.value,
-                    child: SizedBox(
-                      width: 150,
-                      child: LinearProgressIndicator(
-                        backgroundColor: AppTheme.backgroundElevated,
-                        valueColor: const AlwaysStoppedAnimation(
-                          AppTheme.primaryGreen,
-                        ),
-                        minHeight: 3,
-                        borderRadius: BorderRadius.circular(2),
+              if (_startupError != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Column(
+                    children: [
+                      const Text(
+                        'Local storage could not be opened.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.white, fontSize: 15),
                       ),
-                    ),
-                  );
-                },
-              ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Close other apps and try again. If it keeps '
+                        'happening, reinstall the latest release.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: AppTheme.textMuted,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      OutlinedButton.icon(
+                        onPressed: _start,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('TRY AGAIN'),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                // Loading indicator
+                AnimatedBuilder(
+                  animation: _textController,
+                  builder: (context, child) {
+                    return Opacity(
+                      opacity: _textOpacity.value,
+                      child: SizedBox(
+                        width: 150,
+                        child: LinearProgressIndicator(
+                          backgroundColor: AppTheme.backgroundElevated,
+                          valueColor: const AlwaysStoppedAnimation(
+                            AppTheme.primaryGreen,
+                          ),
+                          minHeight: 3,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    );
+                  },
+                ),
             ],
           ),
         ),
