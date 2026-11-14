@@ -97,6 +97,20 @@ Every new user-facing network feature should satisfy three requirements before i
 
 The repository’s `test/` directory contains regression tests for the configuration parser, NPVT SSH round-trip behavior, Smart Connect route ranking, error explanations, the connection canvas and the app splash lifecycle. Run the checks above before opening a pull request.
 
+## Releasing a new version
+
+Releases are published automatically; nothing is uploaded by hand.
+
+1. Start the version on a feature branch:
+   ```bash
+   python3 scripts/bump_version.py 4.2.0 "4SUPER Subscriptions"
+   ```
+   This raises `version` in `pubspec.yaml` (including the Android build number) and opens a dated `CHANGELOG.md` section. Fill in its tables; empty sections are left out of the release notes.
+2. Open a pull request to `main`. **Flutter Quality** checks formatting, analysis, tests and the release build, and attaches the APKs to the run for testing on a device.
+3. Merge. After **Flutter Quality** passes on `main`, **Publish Release** creates the `vX.Y.Z` tag and the GitHub Release from the same tested APKs, with the `CHANGELOG.md` section as notes and `SHA256SUMS.txt` attached.
+
+A version that already has a release is skipped, so merges that do not change `version` publish nothing. The README download link and QR code always point to the latest release.
+
 ## License
 
 This project is distributed under the [MIT License](LICENSE).
