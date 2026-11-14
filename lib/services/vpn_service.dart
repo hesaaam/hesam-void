@@ -7,6 +7,7 @@ import '../models/ssh_config.dart';
 import 'ssh_tunnel_service.dart';
 import 'split_tunneling_service.dart';
 import 'connection_health_service.dart';
+import 'xray_json_config.dart';
 
 /// VPN Connection States
 enum VpnStatus { disconnected, connecting, connected, disconnecting, error }
@@ -323,12 +324,7 @@ class VpnService extends ChangeNotifier {
       _errorMessage = null;
       notifyListeners();
 
-      // CRITICAL: Use FlutterV2ray.parseFromURL to parse the config
-      // This is the official way as per flutter_v2ray documentation
-      V2RayURL parser = FlutterV2ray.parseFromURL(config.rawUrl);
-
-      String remark = parser.remark.isNotEmpty ? parser.remark : config.name;
-      String fullConfig = parser.getFullConfiguration();
+      final (remark, fullConfig) = _engineConfig(config);
 
       if (kDebugMode) {
         debugPrint('[VpnService] Config parsed successfully. Remark: $remark');
@@ -381,6 +377,16 @@ class VpnService extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  /// Remark and full engine JSON for a link or a stored Xray JSON profile.
+  (String, String) _engineConfig(VpnConfig config) {
+    if (config.isJson) {
+      return (config.name, XrayJsonConfig.prepareForEngine(config.rawUrl));
+    }
+    final parser = FlutterV2ray.parseFromURL(config.rawUrl);
+    final remark = parser.remark.isNotEmpty ? parser.remark : config.name;
+    return (remark, parser.getFullConfiguration());
   }
 
   /// Connect to SSH server using dartssh2 + V2Ray VPN mode
@@ -773,9 +779,7 @@ class VpnService extends ChangeNotifier {
     if (!_isInitialized && !await initialize()) return -1;
 
     try {
-      // Parse the config URL
-      V2RayURL parser = FlutterV2ray.parseFromURL(config.rawUrl);
-      String fullConfig = parser.getFullConfiguration();
+      final (_, fullConfig) = _engineConfig(config);
 
       // Use flutter_v2ray's getServerDelay method
       final delay = await flutterV2ray.getServerDelay(config: fullConfig);
