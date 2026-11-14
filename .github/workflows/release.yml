@@ -1,0 +1,102 @@
+name: Publish Release
+
+# Publishes a GitHub Release automatically after a successful quality run on
+# main, when pubspec.yaml carries a version that has not been released yet.
+# The APKs come from that quality run, so the published files are exactly the
+# ones that passed format, analysis, tests and the release build.
+
+on:
+  workflow_run:
+    workflows: [Flutter Quality]
+    types: [completed]
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: publish-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish versioned release
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the tested commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Read version
+        id: version
+        run: |
+          version="$(sed -n 's/^version:[[:space:]]*\([0-9][0-9.]*\).*/\1/p' pubspec.yaml)"
+          if [ -z "$version" ]; then
+            echo "::error::Could not read the version from pubspec.yaml"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Skip versions that are already released
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release $TAG already exists; nothing to publish."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Prepare release notes
+        if: steps.existing.outputs.skip == 'false'
+        id: notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: python3 scripts/release_notes.py "$VERSION" release-notes.md release-title.txt
+
+      - name: Download tested APKs
+        if: steps.existing.outputs.skip == 'false'
+        uses: actions/download-artifact@v4
+        with:
+          name: hesam-void-v4-android-apk
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: apk
+
+      - name: Name release files
+        if: steps.existing.outputs.skip == 'false'
+        run: |
+          mkdir -p dist
+          cp apk/app-release.apk dist/hesam-void-4super-universal.apk
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            if [ -f "apk/app-$abi-release.apk" ]; then
+              cp "apk/app-$abi-release.apk" "dist/hesam-void-4super-$abi.apk"
+            fi
+          done
+          (cd dist && sha256sum *.apk > SHA256SUMS.txt)
+          ls -la dist
+
+      - name: Publish release
+        if: steps.existing.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          TARGET: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          gh release create "$TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$TARGET" \
+            --title "$(cat release-title.txt)" \
+            --notes-file release-notes.md \
+            --latest
