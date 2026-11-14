@@ -9,7 +9,10 @@ import '../services/auto_reconnect_service.dart';
 import '../services/experience_preferences_service.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  /// Shown as a tab of the home screen rather than a pushed page.
+  final bool embedded;
+
+  const SettingsScreen({super.key, this.embedded = false});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -90,13 +93,16 @@ class _SettingsScreenState extends State<SettingsScreen>
             letterSpacing: 2,
           ),
         ),
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: theme.primaryColor),
-          onPressed: () {
-            _hapticService.light();
-            Navigator.pop(context);
-          },
-        ),
+        automaticallyImplyLeading: false,
+        leading: widget.embedded
+            ? null
+            : IconButton(
+                icon: Icon(Icons.arrow_back, color: theme.primaryColor),
+                onPressed: () {
+                  _hapticService.light();
+                  Navigator.pop(context);
+                },
+              ),
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: theme.primaryColor,
