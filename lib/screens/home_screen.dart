@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -25,7 +27,11 @@ import '../widgets/quick_connect_sheet.dart';
 import '../widgets/connection_story_sheet.dart';
 import '../widgets/server_studio_card.dart';
 import '../widgets/super_launch_sheet.dart';
+import '../widgets/add_subscription_sheet.dart';
+import '../widgets/subscription_folder_card.dart';
+import '../services/subscription_service.dart';
 import 'qr_scanner_screen.dart';
+import 'subscription_screen.dart';
 import 'settings_screen.dart';
 
 /// Main Home Screen with VPN Connect functionality
@@ -73,6 +79,8 @@ class _HomeScreenState extends State<HomeScreen>
         _vpnService,
         onFailover: configProvider.selectConfig,
       );
+      // Bring subscriptions whose automatic update is due up to date.
+      unawaited(configProvider.refreshDueSubscriptions());
       final restored = configProvider.selectedConfig;
       if (restored != null) {
         _autoReconnectService.setServerQueue(
@@ -1020,97 +1028,213 @@ class _HomeScreenState extends State<HomeScreen>
             // Action bar
             _buildConfigActionBar(provider, theme),
 
-            // Config list
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.only(top: 8, bottom: 100),
-                itemCount: provider.configs.length,
-                itemBuilder: (context, index) {
-                  final config = provider.configs[index];
-                  final isTesting = provider.isConfigTesting(config.id);
-
-                  final snapshot = ConnectionHealthService().snapshotFor(
-                    config.id,
-                  );
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 5),
-                    child: ServerStudioCard(
-                      config: config,
-                      snapshot: snapshot,
-                      isTesting: isTesting,
-                      compact: _experiencePreferences.compactStudio,
-                      isSelected: provider.selectedConfig?.id == config.id,
-                      isFavorite: _profileWorkspace.isFavorite(config.id),
-                      accentColor: theme.primaryColor,
-                      surfaceColor: theme.surfaceColor,
-                      textColor: theme.textColor,
-                      onSelect: () {
-                        _hapticService.selection();
-                        provider.selectConfig(config);
-                        _autoReconnectService.setServerQueue(
-                          provider.configs,
-                          activeConfigId: config.id,
-                        );
-                        _showSnackBar('${config.name} selected', theme: theme);
-                      },
-                      onToggleFavorite: () async {
-                        await _profileWorkspace.toggleFavorite(config.id);
-                        if (!mounted) return;
-                        _showSnackBar(
-                          _profileWorkspace.isFavorite(config.id)
-                              ? 'Added to Favorites'
-                              : 'Removed from Favorites',
-                          icon: Icons.star_rounded,
-                          color: const Color(0xFFFFC857),
-                          theme: theme,
-                        );
-                      },
-                      onDelete: () async {
-                        _hapticService.warning();
-                        final confirm = await DeleteConfirmDialog.show(
-                          context,
-                          config,
-                        );
-                        if (confirm == true) {
-                          _hapticService.onDelete();
-                          await provider.deleteConfig(config.id);
-                          await _profileWorkspace.forget(config.id);
-                          if (!mounted) return;
-                          _showSnackBar(
-                            'Config deleted',
-                            icon: Icons.delete_outline,
-                            theme: theme,
-                          );
-                        }
-                      },
-                      onCopy: () async {
-                        await Clipboard.setData(
-                          ClipboardData(text: config.rawUrl),
-                        );
-                        if (!mounted) return;
-                        _hapticService.success();
-                        _showSnackBar(
-                          'Copied to clipboard',
-                          icon: Icons.check_circle,
-                          theme: theme,
-                        );
-                      },
-                      onShowQr: () {
-                        _hapticService.selection();
-                        QRDisplayDialog.show(context, config);
-                      },
-                      onTest: () {
-                        _hapticService.light();
-                        provider.testPing(config.id);
-                      },
-                    ),
-                  );
-                },
-              ),
-            ),
+            // Subscription folders first, then routes added by hand.
+            Expanded(child: _buildRouteList(provider, theme)),
           ],
         );
       },
+    );
+  }
+
+  Widget _buildRouteList(ConfigProvider provider, AppThemeData theme) {
+    final subscriptions = provider.subscriptions;
+    final manual = provider.manualConfigs;
+    final items = <Widget>[];
+
+    if (subscriptions.isNotEmpty) {
+      items.add(_buildSectionLabel('SUBSCRIPTIONS', theme));
+      for (final subscription in subscriptions) {
+        final routes = provider.configsFor(subscription.id);
+        final pings = routes
+            .map((c) => c.ping)
+            .whereType<int>()
+            .where((p) => p >= 0)
+            .toList();
+        items.add(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+            child: SubscriptionFolderCard(
+              subscription: subscription,
+              routeCount: routes.length,
+              bestPing: pings.isEmpty
+                  ? null
+                  : pings.reduce((a, b) => a < b ? a : b),
+              isRefreshing: provider.isRefreshing(subscription.id),
+              containsSelection:
+                  provider.selectedConfig?.subscriptionId == subscription.id,
+              accentColor: theme.primaryColor,
+              surfaceColor: theme.surfaceColor,
+              textColor: theme.textColor,
+              onOpen: () => _openSubscription(subscription.id, theme),
+              onRefresh: () async {
+                _hapticService.selection();
+                final result = await provider.refreshSubscription(
+                  subscription.id,
+                );
+                if (!mounted) return;
+                _showResult(result.message, result.success, theme);
+              },
+            ),
+          ),
+        );
+      }
+      if (manual.isNotEmpty) {
+        items.add(_buildSectionLabel('MY ROUTES', theme));
+      }
+    }
+
+    for (final config in manual) {
+      items.add(_buildServerCard(context, provider, config, theme));
+    }
+
+    return ListView(
+      padding: const EdgeInsets.only(top: 4, bottom: 100),
+      children: items,
+    );
+  }
+
+  Widget _buildSectionLabel(String label, AppThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 14, 22, 6),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: theme.textColor.withValues(alpha: 0.5),
+          fontFamily: 'JetBrainsMono',
+          fontWeight: FontWeight.bold,
+          fontSize: 11,
+          letterSpacing: 1.4,
+        ),
+      ),
+    );
+  }
+
+  void _openSubscription(String id, AppThemeData theme) {
+    _hapticService.selection();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SubscriptionScreen(
+          subscriptionId: id,
+          theme: theme,
+          cardBuilder: (ctx, provider, config) =>
+              _buildServerCard(ctx, provider, config, theme),
+          onRunChecks: (routes) =>
+              _runHealthChecks(context.read<ConfigProvider>(), theme, routes),
+          onSmartConnect: (routes) {
+            _tabController.animateTo(0);
+            _runSmartConnect(
+              context.read<ConfigProvider>(),
+              theme,
+              configs: routes,
+            );
+          },
+          onMessage: (message, {bool success = true}) {
+            if (mounted) _showResult(message, success, theme);
+          },
+        ),
+      ),
+    );
+  }
+
+  void _showResult(String message, bool success, AppThemeData theme) {
+    _showSnackBar(
+      message,
+      icon: success ? Icons.check_circle : Icons.error_outline,
+      color: success ? theme.primaryColor : Colors.orange,
+      theme: theme,
+    );
+    success ? _hapticService.success() : _hapticService.error();
+  }
+
+  /// A route card with all its actions; shared by the Servers tab and
+  /// subscription folders.
+  Widget _buildServerCard(
+    BuildContext cardContext,
+    ConfigProvider provider,
+    VpnConfig config,
+    AppThemeData theme,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 5),
+      child: ServerStudioCard(
+        config: config,
+        snapshot: ConnectionHealthService().snapshotFor(config.id),
+        isTesting: provider.isConfigTesting(config.id),
+        compact: _experiencePreferences.compactStudio,
+        isSelected: provider.selectedConfig?.id == config.id,
+        isFavorite: _profileWorkspace.isFavorite(config.id),
+        accentColor: theme.primaryColor,
+        surfaceColor: theme.surfaceColor,
+        textColor: theme.textColor,
+        onSelect: () {
+          _hapticService.selection();
+          provider.selectConfig(config);
+          _autoReconnectService.setServerQueue(
+            provider.configs,
+            activeConfigId: config.id,
+          );
+          _showSnackBar('${config.name} selected', theme: theme);
+        },
+        onToggleFavorite: () async {
+          await _profileWorkspace.toggleFavorite(config.id);
+          if (!mounted) return;
+          _showSnackBar(
+            _profileWorkspace.isFavorite(config.id)
+                ? 'Added to Favorites'
+                : 'Removed from Favorites',
+            icon: Icons.star_rounded,
+            color: const Color(0xFFFFC857),
+            theme: theme,
+          );
+        },
+        onDelete: () async {
+          _hapticService.warning();
+          final confirm = await DeleteConfirmDialog.show(cardContext, config);
+          if (confirm == true) {
+            _hapticService.onDelete();
+            await provider.deleteConfig(config.id);
+            await _profileWorkspace.forget(config.id);
+            if (!mounted) return;
+            _showSnackBar(
+              config.isFromSubscription
+                  ? 'Route deleted. It returns on the next update if the '
+                        'provider still lists it.'
+                  : 'Config deleted',
+              icon: Icons.delete_outline,
+              theme: theme,
+            );
+          }
+        },
+        onCopy: () async {
+          await Clipboard.setData(ClipboardData(text: config.rawUrl));
+          if (!mounted) return;
+          _hapticService.success();
+          _showSnackBar(
+            'Copied to clipboard',
+            icon: Icons.check_circle,
+            theme: theme,
+          );
+        },
+        onShowQr: () {
+          _hapticService.selection();
+          // QR codes hold about 2.9 KB; large JSON profiles do not fit.
+          if (config.rawUrl.length > 2000) {
+            _showSnackBar(
+              'This profile is too large for a QR code. Use Copy instead.',
+              icon: Icons.qr_code_2_rounded,
+              color: Colors.orange,
+              theme: theme,
+            );
+            return;
+          }
+          QRDisplayDialog.show(cardContext, config);
+        },
+        onTest: () {
+          _hapticService.light();
+          provider.testPing(config.id);
+        },
+      ),
     );
   }
 
@@ -1326,7 +1450,21 @@ class _HomeScreenState extends State<HomeScreen>
       context,
       onClipboardImport: () => _importFromClipboard(context),
       onQRScan: () => _scanQRCode(context),
+      onSubscription: _addSubscription,
     );
+  }
+
+  Future<void> _addSubscription() async {
+    final theme = _themeManager.currentTheme;
+    final result = await AddSubscriptionSheet.show(
+      context,
+      accentColor: theme.primaryColor,
+      surfaceColor: theme.surfaceColor,
+      textColor: theme.textColor,
+    );
+    if (result == null || !mounted) return;
+    _showResult(result.message, true, theme);
+    _tabController.animateTo(1);
   }
 
   Future<void> _importFromClipboard(BuildContext context) async {
@@ -1341,6 +1479,13 @@ class _HomeScreenState extends State<HomeScreen>
           icon: Icons.warning_amber_rounded,
           theme: theme,
         );
+        return;
+      }
+
+      // A copied subscription link opens the subscription sheet, which
+      // shows download progress and lets the user name the folder.
+      if (SubscriptionService.parseUrl(data.text!) != null) {
+        await _addSubscription();
         return;
       }
 
@@ -1377,6 +1522,13 @@ class _HomeScreenState extends State<HomeScreen>
     if (result != null && mounted) {
       final provider = context.read<ConfigProvider>();
       final theme = _themeManager.currentTheme;
+      if (SubscriptionService.parseUrl(result) != null) {
+        _showSnackBar(
+          'Downloading subscription…',
+          icon: Icons.download_rounded,
+          theme: theme,
+        );
+      }
       final importResult = await provider.importFromClipboard(result);
 
       _showSnackBar(
@@ -1508,12 +1660,13 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _runSmartConnect(
     ConfigProvider provider,
-    AppThemeData theme,
-  ) async {
+    AppThemeData theme, {
+    List<VpnConfig>? configs,
+  }) async {
     if (_smartConnect.isRunning) return;
     _hapticService.selection();
     final connected = await _smartConnect.run(
-      configs: provider.configs,
+      configs: configs ?? provider.configs,
       vpn: _vpnService,
       autoReconnect: _autoReconnectService,
       onSelect: provider.selectConfig,
@@ -1531,10 +1684,11 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _runHealthChecks(
     ConfigProvider provider,
-    AppThemeData theme,
-  ) async {
+    AppThemeData theme, [
+    List<VpnConfig>? only,
+  ]) async {
     _hapticService.selection();
-    final results = await provider.testAllPings();
+    final results = await provider.testAllPings(only: only);
     if (!mounted || results.isEmpty) return;
     final answered = results.values.where((ping) => ping != null).length;
     _showSnackBar(
