@@ -19,6 +19,47 @@ enum SmartConnectPhase {
   cancelled,
 }
 
+/// Where one route stands during a Smart Connect run (drawn on the radar).
+enum BlipState {
+  pending,
+  reachable,
+  unreachable,
+  measured,
+  failed,
+  trying,
+  winner,
+}
+
+class RadarBlip {
+  final String id;
+  final String name;
+  final BlipState state;
+  final int? tcpMs;
+  final int? realDelayMs;
+
+  const RadarBlip({
+    required this.id,
+    required this.name,
+    this.state = BlipState.pending,
+    this.tcpMs,
+    this.realDelayMs,
+  });
+
+  /// The best latency known so far, used for the distance from the centre.
+  int? get latency =>
+      (realDelayMs != null && realDelayMs! > 0) ? realDelayMs : tcpMs;
+
+  RadarBlip copyWith({BlipState? state, int? tcpMs, int? realDelayMs}) {
+    return RadarBlip(
+      id: id,
+      name: name,
+      state: state ?? this.state,
+      tcpMs: tcpMs ?? this.tcpMs,
+      realDelayMs: realDelayMs ?? this.realDelayMs,
+    );
+  }
+}
+
 /// One candidate route with the evidence used to rank it.
 class SmartCandidate {
   final VpnConfig config;
@@ -66,6 +107,7 @@ class SmartConnectService extends ChangeNotifier {
   int _progressTotal = 0;
   VpnConfig? _currentCandidate;
   bool _cancelRequested = false;
+  final Map<String, RadarBlip> _blips = <String, RadarBlip>{};
   int _runId = 0;
 
   SmartConnectPhase get phase => _phase;
@@ -75,6 +117,19 @@ class SmartConnectService extends ChangeNotifier {
   int get progressDone => _progressDone;
   int get progressTotal => _progressTotal;
   VpnConfig? get currentCandidate => _currentCandidate;
+
+  /// Every route of the current or last run, in the order they were given.
+  List<RadarBlip> get blips => List.unmodifiable(_blips.values);
+
+  void _blip(String id, BlipState state, {int? tcpMs, int? realDelayMs}) {
+    final blip = _blips[id];
+    if (blip == null) return;
+    _blips[id] = blip.copyWith(
+      state: state,
+      tcpMs: tcpMs,
+      realDelayMs: realDelayMs,
+    );
+  }
 
   bool get isRunning =>
       _phase == SmartConnectPhase.scanning ||
@@ -158,6 +213,11 @@ class SmartConnectService extends ChangeNotifier {
     _attempt = 0;
     _attemptTotal = 0;
     _currentCandidate = null;
+    _blips
+      ..clear()
+      ..addEntries(
+        configs.map((c) => MapEntry(c.id, RadarBlip(id: c.id, name: c.name))),
+      );
 
     if (configs.isEmpty) {
       _finish(SmartConnectPhase.failed, 'Add a profile first.');
@@ -178,6 +238,14 @@ class SmartConnectService extends ChangeNotifier {
     final tcp = await PingService.testMultiplePings(
       configs,
       concurrency: 12,
+      onResult: (config, ping) {
+        if (runId != _runId) return;
+        _blip(
+          config.id,
+          ping == null ? BlipState.unreachable : BlipState.reachable,
+          tcpMs: ping,
+        );
+      },
       onProgress: (done, total) {
         if (runId != _runId) return;
         _progressDone = done;
@@ -230,6 +298,11 @@ class SmartConnectService extends ChangeNotifier {
             .getServerDelay(candidate.config)
             .timeout(realDelayTimeout, onTimeout: () => -1);
         measured[candidate.config.id] = delay;
+        _blip(
+          candidate.config.id,
+          delay > 0 ? BlipState.measured : BlipState.failed,
+          realDelayMs: delay > 0 ? delay : null,
+        );
         _progressDone++;
         _message = delay > 0
             ? '${candidate.config.name}: $delay ms'
@@ -257,6 +330,7 @@ class SmartConnectService extends ChangeNotifier {
       if (_stopped(runId)) return null;
       _attempt++;
       _currentCandidate = candidate.config;
+      _blip(candidate.config.id, BlipState.trying);
       onSelect(candidate.config);
       _setPhase(
         SmartConnectPhase.connecting,
@@ -279,6 +353,11 @@ class SmartConnectService extends ChangeNotifier {
           return null;
         }
         if (verified) {
+          _blip(
+            candidate.config.id,
+            BlipState.winner,
+            realDelayMs: vpn.tunnelLatencyMs,
+          );
           _finish(
             SmartConnectPhase.succeeded,
             vpn.tunnelLatencyMs == null
@@ -290,6 +369,7 @@ class SmartConnectService extends ChangeNotifier {
       }
 
       // This route did not work: close it cleanly before trying the next.
+      _blip(candidate.config.id, BlipState.failed);
       await _abortConnection(vpn, autoReconnect);
     }
 

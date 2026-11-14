@@ -14,21 +14,21 @@ import '../services/profile_workspace_service.dart';
 import '../services/experience_preferences_service.dart';
 import '../services/connection_error_explainer.dart';
 import '../services/smart_connect_service.dart';
-import '../utils/app_theme.dart';
 import '../utils/theme_manager.dart';
-import '../widgets/animated_background.dart';
 import '../widgets/config_card.dart';
 import '../widgets/qr_dialog.dart';
-import '../widgets/connect_button.dart';
-import '../widgets/speed_graph.dart';
-import '../widgets/connection_health_card.dart';
-import '../widgets/alive_signal_canvas.dart';
 import '../widgets/quick_connect_sheet.dart';
 import '../widgets/connection_story_sheet.dart';
-import '../widgets/server_studio_card.dart';
 import '../widgets/super_launch_sheet.dart';
 import '../widgets/add_subscription_sheet.dart';
-import '../widgets/subscription_folder_card.dart';
+import '../widgets/subscription_folder_card.dart' show formatDataSize;
+import '../widgets/night/night_controls.dart';
+import '../widgets/night/route_widgets.dart';
+import '../widgets/night/signal_scene.dart';
+import '../utils/night_signal.dart';
+import '../services/session_history_service.dart';
+import 'insights_tab.dart';
+import 'smart_connect_radar_screen.dart';
 import '../services/subscription_service.dart';
 import 'qr_scanner_screen.dart';
 import 'subscription_screen.dart';
@@ -42,9 +42,9 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+class _HomeScreenState extends State<HomeScreen> {
+  int _tab = 0;
+  final Set<String> _openFolders = <String>{};
   final VpnService _vpnService = VpnService();
   final HapticService _hapticService = HapticService();
   final AutoReconnectService _autoReconnectService = AutoReconnectService();
@@ -55,19 +55,17 @@ class _HomeScreenState extends State<HomeScreen>
   final SmartConnectService _smartConnect = SmartConnectService();
   VpnStatus? _lastHapticStatus;
 
-  // Track if showing advanced stats
-  bool _showAdvancedStats = false;
-
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
 
     // Initialize providers and services
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final configProvider = context.read<ConfigProvider>();
       await configProvider.initialize();
       await _vpnService.initialize();
+      await SessionHistoryService().initialize();
+      SessionHistoryService().attach(_vpnService);
       await _hapticService.initialize();
       await _themeManager.initialize();
       await _profileWorkspace.initialize();
@@ -140,7 +138,6 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   void dispose() {
-    _tabController.dispose();
     _vpnService.removeListener(_onVpnStatusChanged);
     _themeManager.removeListener(_onThemeChanged);
     _profileWorkspace.removeListener(_onThemeChanged);
@@ -152,459 +149,489 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   Widget build(BuildContext context) {
     final theme = _themeManager.currentTheme;
+    final accent = theme.primaryColor;
+    final glow = _vpnService.isConnected
+        ? accent.withValues(alpha: 0.16)
+        : (_vpnService.isConnecting || _smartConnect.isRunning
+              ? NightSignal.warning.withValues(alpha: 0.10)
+              : const Color(0x0F8C9AAB));
 
     return Scaffold(
-      backgroundColor: theme.backgroundColor,
-      body: AnimatedBackground(
-        primaryColor: theme.primaryColor,
-        animate: !_experiencePreferences.reduceMotion,
-        child: SafeArea(
-          child: Column(
-            children: [
-              // Custom App Bar
-              _buildAppBar(theme),
-
-              // Tab Bar
-              _buildTabBar(theme),
-
-              // Tab Content
-              Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [_buildConnectTab(theme), _buildConfigsTab(theme)],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAppBar(AppThemeData theme) {
-    return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Row(
-            children: [
-              // Logo and title
-              Row(
-                children: [
-                  Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: _vpnService.isConnected
-                              ? theme.primaryColor.withValues(alpha: 0.2)
-                              : theme.primaryColor.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: _vpnService.isConnected
-                                ? theme.primaryColor
-                                : theme.primaryColor.withValues(alpha: 0.3),
-                          ),
-                          boxShadow: _vpnService.isConnected
-                              ? [
-                                  BoxShadow(
-                                    color: theme.primaryColor.withValues(
-                                      alpha: 0.4,
-                                    ),
-                                    blurRadius: 15,
-                                    spreadRadius: 2,
-                                  ),
-                                ]
-                              : null,
-                        ),
-                        child: Icon(
-                          Icons.shield_rounded,
-                          color: _vpnService.isConnected
-                              ? theme.primaryColor
-                              : theme.primaryColor.withValues(alpha: 0.7),
-                          size: 24,
-                        ),
-                      )
-                      .animate(target: _vpnService.isConnected ? 1 : 0)
-                      .shimmer(
-                        duration: 2000.ms,
-                        color: theme.primaryColor.withValues(alpha: 0.5),
-                      ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'HESAM VOID 4SUPER',
-                        style: TextStyle(
-                          color: theme.primaryColor,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          fontFamily: 'JetBrainsMono',
-                          letterSpacing: 2,
-                        ),
-                      ),
-                      Text(
-                        _vpnService.isConnected
-                            ? 'Protected • Alive Signal'
-                            : 'Alive Signal • Ready to protect',
-                        style: TextStyle(
-                          color: _vpnService.isConnected
-                              ? theme.primaryColor
-                              : theme.textColor.withValues(alpha: 0.5),
-                          fontSize: 11,
-                          fontFamily: 'JetBrainsMono',
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-
-              const Spacer(),
-
-              // Settings button
-              IconButton(
-                icon: Icon(Icons.settings, color: theme.primaryColor),
-                onPressed: () {
-                  _hapticService.selection();
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                  ).then((_) {
-                    if (mounted) setState(() {});
-                  });
-                },
-              ),
-
-              const SizedBox(width: 8),
-
-              // Connection indicator
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
+      backgroundColor: NightSignal.background,
+      extendBody: true,
+      body: Stack(
+        children: [
+          Positioned(
+            left: -120,
+            top: -160,
+            child: IgnorePointer(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 800),
+                width: 520,
+                height: 520,
                 decoration: BoxDecoration(
-                  color: _vpnService.isConnected
-                      ? theme.primaryColor.withValues(alpha: 0.15)
-                      : theme.surfaceColor,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: _vpnService.isConnected
-                        ? theme.primaryColor
-                        : theme.textColor.withValues(alpha: 0.3),
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [glow, glow.withValues(alpha: 0)],
+                    stops: const [0, 0.65],
                   ),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: _vpnService.isConnected
-                                ? theme.primaryColor
-                                : Colors.red,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color:
-                                    (_vpnService.isConnected
-                                            ? theme.primaryColor
-                                            : Colors.red)
-                                        .withValues(alpha: 0.5),
-                                blurRadius: 8,
-                              ),
-                            ],
-                          ),
-                        )
-                        .animate(
-                          onPlay: (c) =>
-                              _vpnService.isConnected ? c.repeat() : c.stop(),
-                        )
-                        .scale(
-                          begin: const Offset(1, 1),
-                          end: const Offset(1.3, 1.3),
-                          duration: 1000.ms,
-                        )
-                        .then()
-                        .scale(
-                          begin: const Offset(1.3, 1.3),
-                          end: const Offset(1, 1),
-                          duration: 1000.ms,
-                        ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _vpnService.isConnected ? 'ON' : 'OFF',
-                      style: TextStyle(
-                        color: _vpnService.isConnected
-                            ? theme.primaryColor
-                            : theme.textColor.withValues(alpha: 0.5),
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        fontFamily: 'JetBrainsMono',
-                      ),
-                    ),
-                  ],
-                ),
               ),
-            ],
-          ),
-        )
-        .animate()
-        .fadeIn(duration: 500.ms)
-        .slideY(begin: -0.3, end: 0, duration: 500.ms);
-  }
-
-  Widget _buildTabBar(AppThemeData theme) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      decoration: BoxDecoration(
-        color: theme.surfaceColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: theme.primaryColor.withValues(alpha: 0.2)),
-      ),
-      child: TabBar(
-        controller: _tabController,
-        indicator: BoxDecoration(
-          color: theme.primaryColor.withValues(alpha: 0.2),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: theme.primaryColor),
-        ),
-        indicatorSize: TabBarIndicatorSize.tab,
-        dividerColor: Colors.transparent,
-        labelColor: theme.primaryColor,
-        unselectedLabelColor: theme.textColor.withValues(alpha: 0.5),
-        labelStyle: const TextStyle(
-          fontFamily: 'JetBrainsMono',
-          fontWeight: FontWeight.bold,
-          fontSize: 13,
-        ),
-        onTap: (_) => _hapticService.selection(),
-        tabs: const [
-          Tab(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.power_settings_new_rounded, size: 18),
-                SizedBox(width: 8),
-                Text('CONNECT'),
-              ],
             ),
           ),
-          Tab(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+          SafeArea(
+            bottom: false,
+            child: IndexedStack(
+              index: _tab,
               children: [
-                Icon(Icons.list_alt_rounded, size: 18),
-                SizedBox(width: 8),
-                Text('SERVERS'),
+                _buildConnectTab(theme),
+                _buildConfigsTab(theme),
+                InsightsTab(
+                  accent: accent,
+                  animate: !_experiencePreferences.reduceMotion,
+                ),
+                const SettingsScreen(embedded: true),
               ],
             ),
           ),
         ],
       ),
+      bottomNavigationBar: NightNavBar(
+        index: _tab,
+        accent: accent,
+        onSelect: _selectTab,
+        items: const [
+          NightNavItem(Icons.power_settings_new_rounded, 'Connect'),
+          NightNavItem(Icons.folder_open_rounded, 'Routes'),
+          NightNavItem(Icons.bar_chart_rounded, 'Insights'),
+          NightNavItem(Icons.settings_rounded, 'Settings'),
+        ],
+      ),
     );
+  }
+
+  void _selectTab(int index) {
+    if (_tab == index) return;
+    _hapticService.selection();
+    setState(() => _tab = index);
+  }
+
+  String _statusLabel() {
+    if (_smartConnect.isRunning) return 'Smart';
+    switch (_vpnService.status) {
+      case VpnStatus.connected:
+        return 'Protected';
+      case VpnStatus.connecting:
+        return 'Connecting';
+      case VpnStatus.disconnecting:
+        return 'Closing';
+      case VpnStatus.error:
+        return 'Attention';
+      case VpnStatus.disconnected:
+        return 'Off';
+    }
+  }
+
+  Color _statusColor(Color accent) {
+    if (_smartConnect.isRunning) return NightSignal.warning;
+    switch (_vpnService.status) {
+      case VpnStatus.connected:
+        return accent;
+      case VpnStatus.connecting:
+      case VpnStatus.disconnecting:
+        return NightSignal.warning;
+      case VpnStatus.error:
+        return NightSignal.danger;
+      case VpnStatus.disconnected:
+        return NightSignal.muted;
+    }
+  }
+
+  (String, String) _sceneText(VpnConfig? route) {
+    if (_smartConnect.isRunning) {
+      return ('Smart Connect', _smartConnect.headline);
+    }
+    switch (_vpnService.status) {
+      case VpnStatus.connected:
+        final eyebrow = switch (_vpnService.tunnelCheck) {
+          TunnelCheck.verified => 'Internet verified',
+          TunnelCheck.failed => 'No internet through the tunnel',
+          _ => 'Checking internet',
+        };
+        return (eyebrow, 'You are protected');
+      case VpnStatus.connecting:
+        return ('Securing route', 'Finding the path…');
+      case VpnStatus.disconnecting:
+        return ('Closing route', 'Disconnecting…');
+      case VpnStatus.error:
+        return ('Needs attention', 'Connection did not complete');
+      case VpnStatus.disconnected:
+        return ('Ready', route == null ? 'Pick a route' : 'Not connected');
+    }
+  }
+
+  void _onPower(ConfigProvider provider, AppThemeData theme) {
+    _hapticService.onConnect();
+    if (_smartConnect.isRunning) {
+      _smartConnect.cancel();
+      return;
+    }
+    if (_vpnService.isConnecting) {
+      _autoReconnectService.notifyUserDisconnecting();
+      _vpnService.disconnect();
+      return;
+    }
+    if (!_vpnService.isConnected && provider.selectedConfig == null) {
+      if (provider.hasConfigs) {
+        _runSmartConnect(provider, theme);
+      } else {
+        _showImportDialog(context);
+      }
+      return;
+    }
+    _handleConnect(provider);
   }
 
   Widget _buildConnectTab(AppThemeData theme) {
     return Consumer<ConfigProvider>(
       builder: (context, provider, _) {
-        final selectedConfig = provider.selectedConfig;
+        final accent = theme.primaryColor;
+        final status = _vpnService.status;
+        final route = provider.selectedConfig ?? _vpnService.currentConfig;
+        final connected = _vpnService.isConnected;
+        final busy =
+            _smartConnect.isRunning ||
+            status == VpnStatus.connecting ||
+            status == VpnStatus.disconnecting;
+        final (eyebrow, headline) = _sceneText(route);
+        final statusColor = _statusColor(accent);
+        final folder = route?.subscriptionId == null
+            ? null
+            : provider.subscriptionById(route!.subscriptionId!);
+        final hint = _smartConnect.isRunning
+            ? _smartConnect.message
+            : connected
+            ? 'Tap to disconnect'
+            : status == VpnStatus.connecting
+            ? 'Tap to cancel'
+            : route == null
+            ? (provider.hasConfigs
+                  ? 'Tap for Smart Connect'
+                  : 'Add a route to start')
+            : 'Tap to protect';
 
-        return SingleChildScrollView(
-          padding: const EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 20,
-            bottom: 100,
-          ),
-          child: Column(
-            children: [
-              ValueListenableBuilder<VpnStats>(
-                valueListenable: _vpnService.statsListenable,
-                builder: (context, stats, _) => AliveSignalCanvas(
-                  status: _vpnService.status,
-                  config: selectedConfig ?? _vpnService.currentConfig,
-                  stats: stats,
-                  accentColor: theme.primaryColor,
-                  surfaceColor: theme.surfaceColor,
-                  textColor: theme.textColor,
-                  smartActive: _smartConnect.isRunning,
-                  smartHeadline: _smartConnect.headline,
-                  smartDetail: _smartConnect.message,
-                  smartProgress: _smartProgressValue,
-                  onSmartConnect: provider.hasConfigs
-                      ? () => _runSmartConnect(provider, theme)
-                      : null,
-                  onCancelSmart: () {
-                    _hapticService.selection();
-                    _smartConnect.cancel();
-                  },
-                  onPrimaryAction: () {
-                    _hapticService.onConnect();
-                    if (!_vpnService.isConnected && selectedConfig == null) {
-                      if (provider.hasConfigs) {
-                        _runSmartConnect(provider, theme);
-                      } else {
-                        _showImportDialog(context);
-                      }
-                      return;
-                    }
-                    _handleConnect(provider);
-                  },
-                  onChooseRoute: () {
-                    _hapticService.selection();
-                    _showQuickConnect(provider, theme);
-                  },
-                  onOpenStory: () {
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(24, 14, 24, 120),
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: NightSignal.surface,
+                    borderRadius: BorderRadius.circular(11),
+                    border: Border.all(color: NightSignal.line),
+                  ),
+                  child: Icon(Icons.shield_outlined, color: accent, size: 19),
+                ),
+                const SizedBox(width: 10),
+                Text('Hesam Void', style: NightSignal.title(size: 18)),
+                const Spacer(),
+                IconButton(
+                  tooltip: 'Connection Story',
+                  onPressed: () {
                     _hapticService.selection();
                     _showConnectionStory(provider, theme);
                   },
-                  reduceMotion: _experiencePreferences.reduceMotion,
-                  disableMotion: _experiencePreferences.disableMotion,
-                ),
-              ),
-              const SizedBox(height: 16),
-              _buildSuperContextStrip(provider, theme),
-
-              if (_smartConnect.phase == SmartConnectPhase.failed ||
-                  _smartConnect.phase == SmartConnectPhase.succeeded) ...[
-                const SizedBox(height: 16),
-                _buildSmartResult(theme),
-              ],
-
-              const SizedBox(height: 20),
-
-              // Proof that traffic really passes the tunnel.
-              if (_vpnService.isConnected) ...[
-                _buildTunnelCheckBadge(provider, theme),
-                const SizedBox(height: 16),
-              ],
-
-              // Connection Stats (when connected)
-              if (_vpnService.isConnected) ...[
-                // Toggle advanced stats
-                GestureDetector(
-                  onTap: () {
-                    _hapticService.selection();
-                    setState(() => _showAdvancedStats = !_showAdvancedStats);
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: theme.surfaceColor,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: theme.primaryColor.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          _showAdvancedStats
-                              ? Icons.bar_chart
-                              : Icons.show_chart,
-                          color: theme.primaryColor,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          _showAdvancedStats ? 'SIMPLE VIEW' : 'DETAILED VIEW',
-                          style: TextStyle(
-                            color: theme.primaryColor,
-                            fontSize: 11,
-                            fontFamily: 'JetBrainsMono',
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
+                  icon: const Icon(
+                    Icons.history_rounded,
+                    color: NightSignal.muted,
                   ),
                 ),
-                const SizedBox(height: 16),
-
-                if (_showAdvancedStats)
-                  // Speed Graph - with better height control
-                  Container(
-                    constraints: const BoxConstraints(maxHeight: 280),
-                    child: SpeedGraphWidget(
-                      vpnService: _vpnService,
-                      primaryColor: theme.primaryColor,
-                      backgroundColor: theme.surfaceColor,
-                    ),
-                  )
-                else
-                  // Simple stats, rebuilt only by the live stats ticks.
-                  ValueListenableBuilder<VpnStats>(
-                    valueListenable: _vpnService.statsListenable,
-                    builder: (context, stats, _) => ConnectionStats(
-                      stats: stats,
-                      primaryColor: theme.primaryColor,
-                    ),
-                  ),
-              ],
-
-              // Connection Navigator is local-only and explains the current
-              // profile health before the user starts a tunnel.
-              if (!_vpnService.isConnected &&
-                  !_vpnService.isConnecting &&
-                  provider.hasConfigs) ...[
-                const SizedBox(height: 20),
-                _buildConnectionNavigator(provider, theme),
-              ],
-
-              // Server Selection (when disconnected)
-              if (!_vpnService.isConnected && !_vpnService.isConnecting) ...[
-                const SizedBox(height: 16),
-                _buildServerSelector(provider, theme),
-              ],
-
-              // Auto-reconnect indicator
-              if (_autoReconnectService.isEnabled && !_vpnService.isConnected)
-                Container(
-                  margin: const EdgeInsets.only(top: 16),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
+                    horizontal: 12,
+                    vertical: 7,
                   ),
                   decoration: BoxDecoration(
-                    color: theme.primaryColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: theme.primaryColor.withValues(alpha: 0.3),
-                    ),
+                    color: NightSignal.surface,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: NightSignal.line),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        Icons.autorenew,
-                        color: theme.primaryColor,
-                        size: 16,
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: statusColor,
+                          shape: BoxShape.circle,
+                        ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 7),
                       Text(
-                        'Auto-reconnect enabled',
+                        _statusLabel(),
                         style: TextStyle(
-                          color: theme.primaryColor,
+                          color: statusColor,
                           fontSize: 12,
-                          fontFamily: 'JetBrainsMono',
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
                   ),
                 ),
-
-              // Error message, explained in plain language.
-              if (_vpnService.errorMessage != null && !_smartConnect.isRunning)
-                _buildErrorCard(provider, theme),
+              ],
+            ),
+            const SizedBox(height: 14),
+            SignalScene(
+              status: _smartConnect.isRunning ? VpnStatus.connecting : status,
+              stats: _vpnService.statsListenable,
+              accent: accent,
+              eyebrow: eyebrow,
+              headline: headline,
+              serverLabel: route == null ? 'Server' : _shortRouteName(route),
+              latencyLabel: connected && _vpnService.tunnelLatencyMs != null
+                  ? '${_vpnService.tunnelLatencyMs} ms'
+                  : null,
+              animate: !_experiencePreferences.disableMotion,
+            ),
+            const SizedBox(height: 22),
+            Center(
+              child: PowerButton(
+                status: status,
+                busy: busy,
+                accent: accent,
+                semanticLabel: connected
+                    ? 'Disconnect'
+                    : (busy ? 'Cancel' : 'Connect'),
+                onPressed: status == VpnStatus.disconnecting
+                    ? null
+                    : () => _onPower(provider, theme),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              hint,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: NightSignal.muted, fontSize: 13),
+            ),
+            const SizedBox(height: 18),
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: provider.hasConfigs
+                    ? () {
+                        _hapticService.selection();
+                        _showQuickConnect(provider, theme);
+                      }
+                    : () => _showImportDialog(context),
+                child: Ink(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
+                  decoration: NightSignal.card(),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color:
+                              (route == null
+                                      ? NightSignal.muted
+                                      : RouteRow.protocolColor(
+                                          route.protocol,
+                                          accent,
+                                        ))
+                                  .withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: route == null
+                            ? const Icon(
+                                Icons.add_rounded,
+                                color: NightSignal.muted,
+                              )
+                            : Text(
+                                route.protocol.shortName,
+                                style: NightSignal.number(
+                                  size: 11,
+                                  color: RouteRow.protocolColor(
+                                    route.protocol,
+                                    accent,
+                                  ),
+                                ),
+                              ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              route?.name ??
+                                  (provider.hasConfigs
+                                      ? 'No route selected'
+                                      : 'No routes yet'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: NightSignal.text,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              route == null
+                                  ? (provider.hasConfigs
+                                        ? 'Tap to choose'
+                                        : 'Paste a link or add a subscription')
+                                  : '${folder?.name ?? 'My route'} · ${route.subtitle}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: NightSignal.muted,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (provider.hasConfigs)
+                        TextButton.icon(
+                          onPressed: _smartConnect.isRunning
+                              ? () => _openRadar('All routes', theme)
+                              : () => _runSmartConnect(provider, theme),
+                          icon: const Icon(
+                            Icons.auto_awesome_rounded,
+                            size: 16,
+                          ),
+                          label: const Text('Smart'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: accent,
+                            backgroundColor: const Color(0x0FFFFFFF),
+                            minimumSize: const Size(0, 44),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            textStyle: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: StatCell(
+                    label: 'Session',
+                    value: ValueListenableBuilder<VpnStats>(
+                      valueListenable: _vpnService.statsListenable,
+                      builder: (context, stats, _) => Text(
+                        connected ? stats.duration : '—',
+                        style: NightSignal.number(),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: StatCell(
+                    label: 'Data',
+                    value: ValueListenableBuilder<VpnStats>(
+                      valueListenable: _vpnService.statsListenable,
+                      builder: (context, stats, _) => Text(
+                        connected
+                            ? formatDataSize(
+                                stats.totalDownload + stats.totalUpload,
+                              )
+                            : '—',
+                        maxLines: 1,
+                        style: NightSignal.number(),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: StatCell(
+                    label: 'Internet',
+                    value: Text(
+                      !connected
+                          ? '—'
+                          : switch (_vpnService.tunnelCheck) {
+                              TunnelCheck.verified => 'Verified',
+                              TunnelCheck.failed => 'No access',
+                              _ => 'Checking',
+                            },
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: !connected
+                            ? NightSignal.muted
+                            : switch (_vpnService.tunnelCheck) {
+                                TunnelCheck.verified => accent,
+                                TunnelCheck.failed => NightSignal.warning,
+                                _ => NightSignal.soft,
+                              },
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (connected && _vpnService.tunnelCheck == TunnelCheck.failed) ...[
+              const SizedBox(height: 12),
+              _buildNoInternetCard(provider, theme),
             ],
-          ),
+            if (_smartConnect.phase == SmartConnectPhase.failed ||
+                _smartConnect.phase == SmartConnectPhase.succeeded) ...[
+              const SizedBox(height: 12),
+              _buildSmartResult(theme),
+            ],
+            if (_vpnService.errorMessage != null && !_smartConnect.isRunning)
+              _buildErrorCard(provider, theme),
+            if (_autoReconnectService.isEnabled &&
+                !connected &&
+                provider.hasConfigs) ...[
+              const SizedBox(height: 14),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.autorenew_rounded,
+                    color: accent.withValues(alpha: 0.8),
+                    size: 15,
+                  ),
+                  const SizedBox(width: 6),
+                  const Text(
+                    'Auto-reconnect is on',
+                    style: TextStyle(color: NightSignal.muted, fontSize: 12),
+                  ),
+                ],
+              ),
+            ],
+          ],
         );
       },
     );
+  }
+
+  String _shortRouteName(VpnConfig route) {
+    final name = route.name.trim();
+    if (name.length <= 9) return name;
+    return '${name.substring(0, 8)}…';
   }
 
   void _showSuperLaunch() {
@@ -669,345 +696,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildSuperContextStrip(ConfigProvider provider, AppThemeData theme) {
-    final focused = provider.selectedConfig ?? _vpnService.currentConfig;
-    final snapshot = focused == null
-        ? null
-        : ConnectionHealthService().snapshotFor(focused.id);
-    final isRecovering =
-        _vpnService.status == VpnStatus.connecting ||
-        _vpnService.status == VpnStatus.disconnecting;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: theme.surfaceColor.withValues(alpha: .7),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: theme.textColor.withValues(alpha: .1)),
-      ),
-      child: Row(
-        children: [
-          _buildSuperMetric(
-            icon: Icons.auto_awesome_rounded,
-            label: 'HEALTH',
-            value: snapshot?.scoreLabel ?? '—',
-            color: snapshot == null
-                ? theme.textColor.withValues(alpha: .55)
-                : theme.primaryColor,
-            theme: theme,
-          ),
-          _buildSuperDivider(theme),
-          _buildSuperMetric(
-            icon: Icons.bolt_rounded,
-            label: 'ROUTE',
-            value: focused?.protocol.shortName ?? 'NONE',
-            color: theme.primaryColor,
-            theme: theme,
-          ),
-          _buildSuperDivider(theme),
-          _buildSuperMetric(
-            icon: Icons.autorenew_rounded,
-            label: 'RECOVER',
-            value: isRecovering
-                ? 'WORKING'
-                : _autoReconnectService.isEnabled
-                ? 'READY'
-                : 'OFF',
-            color: isRecovering
-                ? const Color(0xFFFFB020)
-                : _autoReconnectService.isEnabled
-                ? const Color(0xFF20E870)
-                : theme.textColor.withValues(alpha: .55),
-            theme: theme,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSuperMetric({
-    required IconData icon,
-    required String label,
-    required String value,
-    required Color color,
-    required AppThemeData theme,
-  }) {
-    return Expanded(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: color, size: 13),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  color: theme.textColor.withValues(alpha: .43),
-                  fontFamily: 'JetBrainsMono',
-                  fontSize: 8,
-                  letterSpacing: .5,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 5),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: color,
-              fontFamily: 'JetBrainsMono',
-              fontWeight: FontWeight.bold,
-              fontSize: 11,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSuperDivider(AppThemeData theme) {
-    return Container(
-      width: 1,
-      height: 31,
-      color: theme.textColor.withValues(alpha: .12),
-    );
-  }
-
-  Widget _buildConnectionNavigator(
-    ConfigProvider provider,
-    AppThemeData theme,
-  ) {
-    final health = ConnectionHealthService();
-    return AnimatedBuilder(
-      animation: health,
-      builder: (context, child) {
-        final recommended = health.recommend(provider.configs);
-        final focused =
-            provider.selectedConfig ?? recommended ?? provider.configs.first;
-        final snapshot = health.snapshotFor(focused.id);
-        final canChooseRecommendation =
-            recommended != null &&
-            recommended.id != provider.selectedConfig?.id;
-
-        return ConnectionHealthCard(
-          profileName: focused.name,
-          snapshot: snapshot,
-          isRecommended: recommended?.id == focused.id,
-          onChooseRecommended: canChooseRecommendation
-              ? () {
-                  provider.selectConfig(recommended);
-                  _autoReconnectService.setServerQueue(
-                    provider.configs,
-                    activeConfigId: recommended.id,
-                  );
-                  _showSnackBar(
-                    'Recommended profile selected: ${recommended.name}',
-                    icon: Icons.auto_awesome_rounded,
-                    color: theme.primaryColor,
-                    theme: theme,
-                  );
-                }
-              : null,
-        );
-      },
-    );
-  }
-
-  Widget _buildServerSelector(ConfigProvider provider, AppThemeData theme) {
-    if (!provider.hasConfigs) {
-      return Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: theme.surfaceColor,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: theme.primaryColor.withValues(alpha: 0.2)),
-        ),
-        child: Column(
-          children: [
-            Icon(
-              Icons.dns_outlined,
-              size: 48,
-              color: theme.textColor.withValues(alpha: 0.5),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'No Servers Added',
-              style: TextStyle(
-                color: theme.textColor,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                fontFamily: 'JetBrainsMono',
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Paste a link or scan a QR code to add your first route',
-              style: TextStyle(
-                color: theme.textColor.withValues(alpha: 0.5),
-                fontSize: 12,
-                fontFamily: 'JetBrainsMono',
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: () => _showImportDialog(context),
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('ADD SERVER'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: theme.primaryColor,
-                foregroundColor: Colors.black,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    final selectedConfig = provider.selectedConfig;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.surfaceColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: selectedConfig != null
-              ? theme.primaryColor.withValues(alpha: 0.3)
-              : theme.primaryColor.withValues(alpha: 0.1),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.dns_rounded, color: theme.primaryColor, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                'Selected Server',
-                style: TextStyle(
-                  color: theme.textColor.withValues(alpha: 0.7),
-                  fontSize: 12,
-                  fontFamily: 'JetBrainsMono',
-                ),
-              ),
-              const Spacer(),
-              TextButton(
-                onPressed: () {
-                  _hapticService.selection();
-                  _tabController.animateTo(1);
-                },
-                child: Text(
-                  'Change',
-                  style: TextStyle(
-                    color: theme.primaryColor,
-                    fontSize: 12,
-                    fontFamily: 'JetBrainsMono',
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (selectedConfig != null)
-            Row(
-              children: [
-                // Protocol badge
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.getProtocolColor(
-                      selectedConfig.protocolString,
-                    ).withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    selectedConfig.protocol.shortName,
-                    style: TextStyle(
-                      color: AppTheme.getProtocolColor(
-                        selectedConfig.protocolString,
-                      ),
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      fontFamily: 'JetBrainsMono',
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                // Server info
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        selectedConfig.name,
-                        style: TextStyle(
-                          color: theme.textColor,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          fontFamily: 'JetBrainsMono',
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      Text(
-                        '${selectedConfig.address}:${selectedConfig.port}',
-                        style: TextStyle(
-                          color: theme.textColor.withValues(alpha: 0.5),
-                          fontSize: 11,
-                          fontFamily: 'JetBrainsMono',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Ping
-                if (selectedConfig.ping != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppTheme.getPingColor(
-                        selectedConfig.ping,
-                      ).withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      '${selectedConfig.ping}ms',
-                      style: TextStyle(
-                        color: AppTheme.getPingColor(selectedConfig.ping),
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        fontFamily: 'JetBrainsMono',
-                      ),
-                    ),
-                  ),
-              ],
-            )
-          else
-            Text(
-              'Tap "Change" to select a server',
-              style: TextStyle(
-                color: theme.textColor.withValues(alpha: 0.5),
-                fontSize: 13,
-                fontFamily: 'JetBrainsMono',
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildConfigsTab(AppThemeData theme) {
     return Consumer<ConfigProvider>(
       builder: (context, provider, _) {
@@ -1019,93 +707,184 @@ class _HomeScreenState extends State<HomeScreen>
           return EmptyConfigsWidget(
             onAddConfig: () => _showImportDialog(context),
             primaryColor: theme.primaryColor,
-            textColor: theme.textColor,
+            textColor: NightSignal.text,
           );
         }
 
-        return Column(
-          children: [
-            // Action bar
-            _buildConfigActionBar(provider, theme),
+        final accent = theme.primaryColor;
+        final subscriptions = provider.subscriptions;
+        final manual = provider.manualConfigs;
 
-            // Subscription folders first, then routes added by hand.
-            Expanded(child: _buildRouteList(provider, theme)),
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 22, 16, 120),
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Routes', style: NightSignal.title()),
+                        const SizedBox(height: 3),
+                        Text(
+                          '${subscriptions.length} folder${subscriptions.length == 1 ? '' : 's'} · '
+                          '${provider.configCount} route${provider.configCount == 1 ? '' : 's'}',
+                          style: const TextStyle(
+                            color: NightSignal.muted,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Sort routes',
+                    onPressed: () {
+                      _hapticService.selection();
+                      _showSortOptions(context, theme);
+                    },
+                    icon: const Icon(
+                      Icons.sort_rounded,
+                      color: NightSignal.muted,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    tooltip: 'Add routes',
+                    onPressed: () => _showImportDialog(context),
+                    style: IconButton.styleFrom(
+                      backgroundColor: accent,
+                      fixedSize: const Size(46, 46),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                    ),
+                    icon: const Icon(
+                      Icons.add_rounded,
+                      color: NightSignal.background,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: OutlinedButton.icon(
+                onPressed: provider.isTestingPing || _smartConnect.isRunning
+                    ? null
+                    : () => _runHealthChecks(provider, theme),
+                icon: provider.isTestingPing
+                    ? SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: accent,
+                        ),
+                      )
+                    : const Icon(Icons.speed_rounded, size: 18),
+                label: Text(
+                  provider.isTestingPing && provider.checkTotal > 0
+                      ? 'Checking ${provider.checkCompleted} of ${provider.checkTotal}'
+                      : 'Check all routes',
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: accent,
+                  minimumSize: const Size(double.infinity, 46),
+                  side: BorderSide(color: accent.withValues(alpha: 0.45)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  textStyle: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
+            if (subscriptions.isNotEmpty) ...[
+              _buildSectionLabel('SUBSCRIPTIONS', theme),
+              for (final subscription in subscriptions)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 5,
+                  ),
+                  child: _buildFolder(provider, subscription.id, theme),
+                ),
+            ],
+            if (manual.isNotEmpty) ...[
+              _buildSectionLabel('MY ROUTES', theme),
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                decoration: NightSignal.card(radius: 22),
+                child: Column(
+                  children: [
+                    for (var i = 0; i < manual.length; i++)
+                      _routeRow(
+                        context,
+                        provider,
+                        manual[i],
+                        theme,
+                        divider: i > 0,
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ],
         );
       },
     );
   }
 
-  Widget _buildRouteList(ConfigProvider provider, AppThemeData theme) {
-    final subscriptions = provider.subscriptions;
-    final manual = provider.manualConfigs;
-    final items = <Widget>[];
-
-    if (subscriptions.isNotEmpty) {
-      items.add(_buildSectionLabel('SUBSCRIPTIONS', theme));
-      for (final subscription in subscriptions) {
-        final routes = provider.configsFor(subscription.id);
-        final pings = routes
-            .map((c) => c.ping)
-            .whereType<int>()
-            .where((p) => p >= 0)
-            .toList();
-        items.add(
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
-            child: SubscriptionFolderCard(
-              subscription: subscription,
-              routeCount: routes.length,
-              bestPing: pings.isEmpty
-                  ? null
-                  : pings.reduce((a, b) => a < b ? a : b),
-              isRefreshing: provider.isRefreshing(subscription.id),
-              containsSelection:
-                  provider.selectedConfig?.subscriptionId == subscription.id,
-              accentColor: theme.primaryColor,
-              surfaceColor: theme.surfaceColor,
-              textColor: theme.textColor,
-              onOpen: () => _openSubscription(subscription.id, theme),
-              onRefresh: () async {
-                _hapticService.selection();
-                final result = await provider.refreshSubscription(
-                  subscription.id,
-                );
-                if (!mounted) return;
-                _showResult(result.message, result.success, theme);
-              },
-            ),
-          ),
-        );
-      }
-      if (manual.isNotEmpty) {
-        items.add(_buildSectionLabel('MY ROUTES', theme));
-      }
-    }
-
-    for (final config in manual) {
-      items.add(_buildServerCard(context, provider, config, theme));
-    }
-
-    return ListView(
-      padding: const EdgeInsets.only(top: 4, bottom: 100),
-      children: items,
+  Widget _buildFolder(
+    ConfigProvider provider,
+    String subscriptionId,
+    AppThemeData theme,
+  ) {
+    final subscription = provider.subscriptionById(subscriptionId)!;
+    final routes = provider.configsFor(subscriptionId);
+    final pings = routes
+        .map((c) => c.ping)
+        .whereType<int>()
+        .where((p) => p >= 0)
+        .toList();
+    final open = _openFolders.contains(subscriptionId);
+    return FolderTile(
+      key: ValueKey(subscriptionId),
+      subscription: subscription,
+      routeCount: routes.length,
+      bestPing: pings.isEmpty ? null : pings.reduce((a, b) => a < b ? a : b),
+      open: open,
+      refreshing: provider.isRefreshing(subscriptionId),
+      containsSelection:
+          provider.selectedConfig?.subscriptionId == subscriptionId,
+      accent: theme.primaryColor,
+      onToggle: () {
+        _hapticService.selection();
+        setState(() {
+          open
+              ? _openFolders.remove(subscriptionId)
+              : _openFolders.add(subscriptionId);
+        });
+      },
+      onManage: () => _openSubscription(subscriptionId, theme),
+      children: [
+        for (var i = 0; i < routes.length; i++)
+          _routeRow(context, provider, routes[i], theme, divider: true),
+      ],
     );
   }
 
   Widget _buildSectionLabel(String label, AppThemeData theme) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 14, 22, 6),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: theme.textColor.withValues(alpha: 0.5),
-          fontFamily: 'JetBrainsMono',
-          fontWeight: FontWeight.bold,
-          fontSize: 11,
-          letterSpacing: 1.4,
-        ),
-      ),
+      padding: const EdgeInsets.fromLTRB(14, 22, 14, 8),
+      child: Text(label, style: NightSignal.eyebrow()),
     );
   }
 
@@ -1117,16 +896,21 @@ class _HomeScreenState extends State<HomeScreen>
         builder: (_) => SubscriptionScreen(
           subscriptionId: id,
           theme: theme,
-          cardBuilder: (ctx, provider, config) =>
-              _buildServerCard(ctx, provider, config, theme),
+          cardBuilder: (ctx, provider, config) => Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            decoration: const BoxDecoration(color: NightSignal.surface),
+            child: _routeRow(ctx, provider, config, theme, divider: true),
+          ),
           onRunChecks: (routes) =>
               _runHealthChecks(context.read<ConfigProvider>(), theme, routes),
           onSmartConnect: (routes) {
-            _tabController.animateTo(0);
+            _selectTab(0);
             _runSmartConnect(
               context.read<ConfigProvider>(),
               theme,
               configs: routes,
+              scope: context.read<ConfigProvider>().subscriptionById(id)?.name,
             );
           },
           onMessage: (message, {bool success = true}) {
@@ -1147,26 +931,24 @@ class _HomeScreenState extends State<HomeScreen>
     success ? _hapticService.success() : _hapticService.error();
   }
 
-  /// A route card with all its actions; shared by the Servers tab and
-  /// subscription folders.
-  Widget _buildServerCard(
-    BuildContext cardContext,
+  /// A route line with all its actions; shared by the Routes tab and the
+  /// subscription management screen.
+  Widget _routeRow(
+    BuildContext rowContext,
     ConfigProvider provider,
     VpnConfig config,
-    AppThemeData theme,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 5),
-      child: ServerStudioCard(
-        config: config,
-        snapshot: ConnectionHealthService().snapshotFor(config.id),
-        isTesting: provider.isConfigTesting(config.id),
-        compact: _experiencePreferences.compactStudio,
-        isSelected: provider.selectedConfig?.id == config.id,
-        isFavorite: _profileWorkspace.isFavorite(config.id),
-        accentColor: theme.primaryColor,
-        surfaceColor: theme.surfaceColor,
-        textColor: theme.textColor,
+    AppThemeData theme, {
+    bool divider = true,
+  }) {
+    return RouteRow(
+      key: ValueKey(config.id),
+      config: config,
+      selected: provider.selectedConfig?.id == config.id,
+      favorite: _profileWorkspace.isFavorite(config.id),
+      testing: provider.isConfigTesting(config.id),
+      accent: theme.primaryColor,
+      divider: divider,
+      actions: RouteActions(
         onSelect: () {
           _hapticService.selection();
           provider.selectConfig(config);
@@ -1176,6 +958,10 @@ class _HomeScreenState extends State<HomeScreen>
           );
           _showSnackBar('${config.name} selected', theme: theme);
         },
+        onTest: () {
+          _hapticService.light();
+          provider.testPing(config.id);
+        },
         onToggleFavorite: () async {
           await _profileWorkspace.toggleFavorite(config.id);
           if (!mounted) return;
@@ -1184,27 +970,9 @@ class _HomeScreenState extends State<HomeScreen>
                 ? 'Added to Favorites'
                 : 'Removed from Favorites',
             icon: Icons.star_rounded,
-            color: const Color(0xFFFFC857),
+            color: NightSignal.warning,
             theme: theme,
           );
-        },
-        onDelete: () async {
-          _hapticService.warning();
-          final confirm = await DeleteConfirmDialog.show(cardContext, config);
-          if (confirm == true) {
-            _hapticService.onDelete();
-            await provider.deleteConfig(config.id);
-            await _profileWorkspace.forget(config.id);
-            if (!mounted) return;
-            _showSnackBar(
-              config.isFromSubscription
-                  ? 'Route deleted. It returns on the next update if the '
-                        'provider still lists it.'
-                  : 'Config deleted',
-              icon: Icons.delete_outline,
-              theme: theme,
-            );
-          }
         },
         onCopy: () async {
           await Clipboard.setData(ClipboardData(text: config.rawUrl));
@@ -1228,178 +996,35 @@ class _HomeScreenState extends State<HomeScreen>
             );
             return;
           }
-          QRDisplayDialog.show(cardContext, config);
+          QRDisplayDialog.show(rowContext, config);
         },
-        onTest: () {
-          _hapticService.light();
-          provider.testPing(config.id);
+        onDelete: () async {
+          _hapticService.warning();
+          final confirm = await DeleteConfirmDialog.show(rowContext, config);
+          if (confirm == true) {
+            _hapticService.onDelete();
+            await provider.deleteConfig(config.id);
+            await _profileWorkspace.forget(config.id);
+            if (!mounted) return;
+            _showSnackBar(
+              config.isFromSubscription
+                  ? 'Route deleted. It returns on the next update if the '
+                        'provider still lists it.'
+                  : 'Config deleted',
+              icon: Icons.delete_outline,
+              theme: theme,
+            );
+          }
         },
-      ),
-    );
-  }
-
-  Widget _buildConfigActionBar(ConfigProvider provider, AppThemeData theme) {
-    final favoriteCount = provider.configs
-        .where((config) => _profileWorkspace.isFavorite(config.id))
-        .length;
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: theme.surfaceColor.withValues(alpha: .72),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: theme.primaryColor.withValues(alpha: .18)),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(9),
-                decoration: BoxDecoration(
-                  color: theme.primaryColor.withValues(alpha: .14),
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: Icon(
-                  Icons.dashboard_customize_rounded,
-                  color: theme.primaryColor,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'SERVER STUDIO',
-                      style: TextStyle(
-                        color: theme.textColor,
-                        fontFamily: 'JetBrainsMono',
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                        letterSpacing: 1.1,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      '${provider.configCount} routes  •  $favoriteCount favorites  •  local health only',
-                      style: TextStyle(
-                        color: theme.textColor.withValues(alpha: .48),
-                        fontFamily: 'JetBrainsMono',
-                        fontSize: 9.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              _buildActionButton(
-                icon: Icons.add_rounded,
-                tooltip: 'Import route',
-                theme: theme,
-                onTap: () {
-                  _hapticService.selection();
-                  _showImportDialog(context);
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: provider.isTestingPing || _smartConnect.isRunning
-                      ? null
-                      : () => _runHealthChecks(provider, theme),
-                  icon: const Icon(Icons.speed_rounded, size: 17),
-                  label: Text(
-                    provider.isTestingPing
-                        ? (provider.checkTotal > 0
-                              ? 'CHECKING ${provider.checkCompleted}/${provider.checkTotal}'
-                              : 'CHECKING ROUTES…')
-                        : 'RUN HEALTH CHECKS',
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: theme.primaryColor,
-                    side: BorderSide(
-                      color: theme.primaryColor.withValues(alpha: .55),
-                    ),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    textStyle: const TextStyle(
-                      fontFamily: 'JetBrainsMono',
-                      fontWeight: FontWeight.bold,
-                      fontSize: 10,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 9),
-              _buildActionButton(
-                icon: Icons.sort_rounded,
-                tooltip: 'Sort routes',
-                theme: theme,
-                onTap: () {
-                  _hapticService.selection();
-                  _showSortOptions(context, theme);
-                },
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActionButton({
-    required IconData icon,
-    required String tooltip,
-    required AppThemeData theme,
-    required VoidCallback onTap,
-  }) {
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: theme.surfaceColor,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: theme.primaryColor.withValues(alpha: 0.2),
-            ),
-          ),
-          child: Icon(icon, color: theme.primaryColor, size: 20),
-        ),
       ),
     );
   }
 
   Widget _buildLoadingState(AppThemeData theme) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          SizedBox(
-            width: 50,
-            height: 50,
-            child: CircularProgressIndicator(
-              strokeWidth: 3,
-              valueColor: AlwaysStoppedAnimation(theme.primaryColor),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            'Loading configurations...',
-            style: TextStyle(
-              color: theme.textColor.withValues(alpha: 0.5),
-              fontSize: 14,
-              fontFamily: 'JetBrainsMono',
-            ),
-          ),
-        ],
+      child: CircularProgressIndicator(
+        strokeWidth: 3,
+        color: theme.primaryColor,
       ),
     );
   }
@@ -1432,7 +1057,7 @@ class _HomeScreenState extends State<HomeScreen>
           color: Colors.orange,
           theme: theme,
         );
-        _tabController.animateTo(1);
+        _selectTab(1);
       }
       return;
     }
@@ -1464,7 +1089,7 @@ class _HomeScreenState extends State<HomeScreen>
     );
     if (result == null || !mounted) return;
     _showResult(result.message, true, theme);
-    _tabController.animateTo(1);
+    _selectTab(1);
   }
 
   Future<void> _importFromClipboard(BuildContext context) async {
@@ -1519,7 +1144,7 @@ class _HomeScreenState extends State<HomeScreen>
       MaterialPageRoute(builder: (_) => const QRScannerScreen()),
     );
 
-    if (result != null && mounted) {
+    if (result != null && context.mounted) {
       final provider = context.read<ConfigProvider>();
       final theme = _themeManager.currentTheme;
       if (SubscriptionService.parseUrl(result) != null) {
@@ -1649,29 +1274,48 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  double? get _smartProgressValue {
-    final total = _smartConnect.progressTotal;
-    if (_smartConnect.phase == SmartConnectPhase.scanning ||
-        _smartConnect.phase == SmartConnectPhase.measuring) {
-      return total == 0 ? null : _smartConnect.progressDone / total;
-    }
-    return null;
+  void _openRadar(String scope, AppThemeData theme) {
+    Navigator.of(context).push(
+      PageRouteBuilder<void>(
+        transitionDuration: const Duration(milliseconds: 380),
+        pageBuilder: (_, _, _) => SmartConnectRadarScreen(
+          scopeLabel: scope,
+          accent: theme.primaryColor,
+          animate: !_experiencePreferences.disableMotion,
+        ),
+        transitionsBuilder: (_, animation, _, child) => FadeTransition(
+          opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+          child: ScaleTransition(
+            scale: Tween(begin: 0.96, end: 1.0).animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _runSmartConnect(
     ConfigProvider provider,
     AppThemeData theme, {
     List<VpnConfig>? configs,
+    String? scope,
   }) async {
-    if (_smartConnect.isRunning) return;
+    if (_smartConnect.isRunning) {
+      _openRadar(scope ?? 'All routes', theme);
+      return;
+    }
     _hapticService.selection();
-    final connected = await _smartConnect.run(
+    final run = _smartConnect.run(
       configs: configs ?? provider.configs,
       vpn: _vpnService,
       autoReconnect: _autoReconnectService,
       onSelect: provider.selectConfig,
       onMeasured: provider.applyMeasurements,
     );
+    _openRadar(scope ?? 'All routes', theme);
+    final connected = await run;
     if (!mounted) return;
     if (connected != null) {
       _hapticService.success();
@@ -1755,70 +1399,34 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildTunnelCheckBadge(ConfigProvider provider, AppThemeData theme) {
-    final check = _vpnService.tunnelCheck;
-    late final Color color;
-    late final IconData icon;
-    late final String label;
-    switch (check) {
-      case TunnelCheck.verified:
-        color = const Color(0xFF20E870);
-        icon = Icons.verified_rounded;
-        label = _vpnService.tunnelLatencyMs == null
-            ? 'Internet verified'
-            : 'Internet verified • ${_vpnService.tunnelLatencyMs} ms';
-      case TunnelCheck.failed:
-        color = Colors.orange;
-        icon = Icons.warning_amber_rounded;
-        label = 'Tunnel is up, but no internet';
-      case TunnelCheck.checking:
-      case TunnelCheck.idle:
-        color = theme.primaryColor;
-        icon = Icons.radar_rounded;
-        label = 'Checking internet access…';
-    }
-
-    return Semantics(
-      liveRegion: true,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: 0.35)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (check == TunnelCheck.checking || check == TunnelCheck.idle)
-              SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(strokeWidth: 2, color: color),
-              )
-            else
-              Icon(icon, color: color, size: 18),
-            const SizedBox(width: 10),
-            Flexible(
-              child: Text(
-                label,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.bold,
-                  fontFamily: 'JetBrainsMono',
-                ),
-              ),
+  Widget _buildNoInternetCard(ConfigProvider provider, AppThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+      decoration: BoxDecoration(
+        color: NightSignal.warning.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: NightSignal.warning.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.warning_amber_rounded,
+            color: NightSignal.warning,
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              'The tunnel is up, but no internet passes through it.',
+              style: TextStyle(color: NightSignal.text, fontSize: 13),
             ),
-            if (check == TunnelCheck.failed) ...[
-              const SizedBox(width: 8),
-              TextButton(
-                onPressed: () => _runSmartConnect(provider, theme),
-                child: const Text('TRY ANOTHER'),
-              ),
-            ],
-          ],
-        ),
+          ),
+          TextButton(
+            onPressed: () => _runSmartConnect(provider, theme),
+            style: TextButton.styleFrom(foregroundColor: NightSignal.warning),
+            child: const Text('Try another'),
+          ),
+        ],
       ),
     );
   }

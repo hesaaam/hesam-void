@@ -139,6 +139,15 @@ class ConnectionHealthService extends ChangeNotifier {
       ..sort((a, b) => b.at.compareTo(a.at));
   }
 
+  /// Number of events of [type] across all routes within [from]..[to].
+  int countEvents(ConnectionEventType type, DateTime from, DateTime to) {
+    return _events
+        .where(
+          (e) => e.type == type && !e.at.isBefore(from) && e.at.isBefore(to),
+        )
+        .length;
+  }
+
   ConnectionHealthSnapshot snapshotFor(String configId) {
     final events = eventsFor(configId);
     if (events.isEmpty) {

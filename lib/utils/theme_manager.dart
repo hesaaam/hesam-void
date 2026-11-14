@@ -52,6 +52,19 @@ class AppThemeData {
 
 /// Predefined Themes
 class PredefinedThemes {
+  // 0. Night Signal (default since 4.3)
+  static const nightSignal = AppThemeData(
+    id: 'night_signal',
+    name: 'Night Signal',
+    primaryColor: Color(0xFF34E1A1),
+    secondaryColor: Color(0xFF5AA9FF),
+    backgroundColor: Color(0xFF0A0E13),
+    surfaceColor: Color(0xFF121821),
+    textColor: Color(0xFFE8EEF5),
+    accentColor: Color(0xFF34E1A1),
+    brightness: Brightness.dark,
+  );
+
   // 1. Terminal Green (Default - Matrix Style)
   static const terminalGreen = AppThemeData(
     id: 'terminal_green',
@@ -157,6 +170,7 @@ class PredefinedThemes {
   );
 
   static List<AppThemeData> get all => [
+    nightSignal,
     terminalGreen,
     cyberpunkPurple,
     oceanBlue,
@@ -179,7 +193,8 @@ class ThemeManager extends ChangeNotifier {
   static const String _customThemesKey = 'custom_themes';
 
   Box? _box;
-  AppThemeData _currentTheme = PredefinedThemes.terminalGreen;
+  AppThemeData _currentTheme = PredefinedThemes.nightSignal;
+  static const String _nightSignalIntroducedKey = 'night_signal_introduced_v1';
   List<AppThemeData> _customThemes = [];
 
   AppThemeData get currentTheme => _currentTheme;
@@ -198,12 +213,18 @@ class ThemeManager extends ChangeNotifier {
 
   /// Load saved theme
   Future<void> _loadTheme() async {
+    // 4.3 introduces Night Signal as the app's look; switch to it once on
+    // upgrade. Any theme picked afterwards in Settings is kept.
+    if (_box?.get(_nightSignalIntroducedKey, defaultValue: false) != true) {
+      await _box?.put(_themeKey, PredefinedThemes.nightSignal.id);
+      await _box?.put(_nightSignalIntroducedKey, true);
+    }
     final themeId =
-        _box?.get(_themeKey, defaultValue: 'terminal_green') as String?;
+        _box?.get(_themeKey, defaultValue: 'night_signal') as String?;
     if (themeId != null) {
       _currentTheme = allThemes.firstWhere(
         (t) => t.id == themeId,
-        orElse: () => PredefinedThemes.terminalGreen,
+        orElse: () => PredefinedThemes.nightSignal,
       );
     }
   }

@@ -20,6 +20,15 @@ The QR Code always points to the APK of the latest Release, so it stays valid fo
 
 > Android may ask you to allow installation from your browser or file manager. If an older build was signed with a different key, uninstall it before installing this test release.
 
+## New in 4.3 — Night Signal
+
+| Capability | What the user gets |
+|---|---|
+| **Live route** | Particles flow between your phone and the server at the speed of your real traffic. |
+| **Smart Connect radar** | Watch every route being tested on a radar; the best one is pulled to the centre. |
+| **Insights** | Protected time, data, apps used while protected, a five-week calendar and your usual hours — kept only on this phone. |
+| **New navigation** | Connect, Routes, Insights and Settings in a bottom bar; folders open in place. |
+
 ## New in 4.2 — Subscriptions
 
 | Capability | What the user gets |
