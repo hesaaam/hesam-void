@@ -2,6 +2,30 @@
 
 All notable changes to Hesam Void are documented in this file.
 
+## [4.3.0] - 2026-11-14 — Night Signal
+
+### Added
+
+| Area | Change |
+|---|---|
+| Night Signal look | A new default look: deep night background, one signal colour for live state and monospace numbers. Themes chosen in Settings still change the accent colour. |
+| Navigation | A floating bottom bar with Connect, Routes, Insights and Settings replaces the two top tabs. |
+| Live route | The Connect screen draws the route between your phone and the server. While protected, light particles travel along it — downloads towards the phone, uploads towards the server — and their speed follows the real traffic. Connecting shows a moving dashed route. |
+| Smart Connect radar | Smart Connect opens a radar where every route is a blip: distance from the centre is its latency, unreachable routes sit on the edge in red, measured ones light up, and the winner is pulled into the centre. Steps and a Real Delay ranking are shown underneath. |
+| Routes | Subscription folders show a data-usage ring and days left and open in place. Each route is a compact line with a four-bar signal indicator; long-press or the menu opens its actions. |
+| Insights | Protected time, data, sessions and drops for Day, Week or Month; the apps used while protected (with Usage access); a five-week calendar; the hours you usually connect; and data per day. Everything stays on the phone and can be cleared. |
+
+### Changed
+
+| Area | Change |
+|---|---|
+| Connect screen | One clear power button, the selected route with a Smart shortcut, and Session, Data and Internet status at a glance. Tapping during connecting cancels. |
+| Motion | The matrix background is gone. All new animations follow the Motion setting in Settings. |
+
+### Removed
+
+- The previous canvas, health card, server card, speed graph and matrix background widgets.
+
 ## [4.2.0] - 2026-11-14 — 4SUPER Subscriptions
 
 ### Added
