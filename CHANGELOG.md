@@ -2,6 +2,42 @@
 
 All notable changes to Hesam Void are documented in this file.
 
+## [4.1.0] - Unreleased — 4SUPER Smart Connect
+
+### Added
+
+| Area | Change |
+|---|---|
+| Smart Connect | One tap checks every saved route in parallel, measures real traffic (Real Delay) on the most promising ones, connects to the best and automatically falls back to the next route when one fails. Progress and a cancel action are shown on the Alive Signal canvas. |
+| Internet check | After every connection the app sends a test request through the tunnel and shows `Internet verified • N ms` or a clear warning with a one-tap way to try another route. Results feed local route health. |
+| Readable errors | Engine, socket and SSH errors are explained in plain language with a suggested next step (find a working route, open details, or dismiss). |
+| Remembered route | The selected route is restored when the app opens again. |
+
+### Changed
+
+| Area | Change |
+|---|---|
+| Health checks | Results appear on each card as soon as that route finishes, with `CHECKING n/total` progress and a summary of how many routes answered. History and profiles are saved once per run instead of once per route. |
+| Startup | Local services open in parallel behind a shorter splash; a storage failure now shows a retry screen instead of a blank app. |
+| Battery and smoothness | Live traffic counters refresh only the widgets that show them. The background effect reuses pre-rendered glyphs, runs at 30 fps and stops completely when Motion is Reduced or Off. |
+| Alive Signal canvas | Grows with its content on short screens and large font sizes instead of clipping. |
+| Quick Connect | Lists every saved route (previously only the first eight) and includes Smart Connect. |
+| Settings | Optimization and anti-filtering options are clearly marked as not yet applied to connections. |
+
+### Fixed
+
+| Area | Fix |
+|---|---|
+| Haptics | The phone no longer vibrates every second while connected; feedback fires only on real state changes. |
+| Route health | Per-second engine updates no longer flood local history with duplicate `connected` events, which had pushed out real checks and made `Best now` unreliable. |
+| Latency display | A failed check now clears the old latency instead of showing a stale value. |
+| SSH | A failed VPN start now closes the SSH session behind it, and repeated connections no longer stack duplicate listeners. |
+| Web latency | Removed simulated latency values; a failed measurement is shown as failed. |
+
+### Removed
+
+- Unused legacy splash screen, connection map widget and load balancer service.
+
 ## [4.0.2] - 2026-08-17 — 4SUPER
 
 ### Added
