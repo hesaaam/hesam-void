@@ -14,7 +14,6 @@ import '../services/profile_workspace_service.dart';
 import '../services/experience_preferences_service.dart';
 import '../services/connection_error_explainer.dart';
 import '../services/smart_connect_service.dart';
-import '../utils/app_theme.dart';
 import '../utils/theme_manager.dart';
 import '../widgets/config_card.dart';
 import '../widgets/qr_dialog.dart';
@@ -1145,7 +1144,7 @@ class _HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute(builder: (_) => const QRScannerScreen()),
     );
 
-    if (result != null && mounted) {
+    if (result != null && context.mounted) {
       final provider = context.read<ConfigProvider>();
       final theme = _themeManager.currentTheme;
       if (SubscriptionService.parseUrl(result) != null) {
