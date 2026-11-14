@@ -2,6 +2,26 @@
 
 All notable changes to Hesam Void are documented in this file.
 
+## [4.2.0] - 2026-11-14 — 4SUPER Subscriptions
+
+### Added
+
+| Area | Change |
+|---|---|
+| Subscriptions | Add a subscription link and its routes are kept together in a folder on the Servers tab instead of filling the list. Folders show route count, best latency, data used, allowance and days left when the provider shares them. |
+| Folder view | Opening a folder shows its routes with Update, Check routes and Smart Connect limited to that folder, plus rename, automatic update interval, copy link and delete. Pull down to update. |
+| Updates | Updating keeps unchanged routes with their latency and health history, adds new ones and removes routes the provider no longer lists. Folders update automatically on app start when their interval is due (12 hours by default, or the provider's suggestion). An empty or failed response never wipes a folder. |
+| Xray JSON | Complete Xray JSON profiles (one object or a list) can be imported from subscriptions or pasted. They connect, run Real Delay and take part in Smart Connect like link profiles. |
+| Import | Pasting base64 subscription content or JSON now works; a copied subscription link opens the subscription sheet directly. Scanning a QR code that holds a subscription link adds the folder. |
+
+### Changed
+
+| Area | Change |
+|---|---|
+| Unsupported content | Clash and sing-box profiles and links using protocols the engine cannot run (for example `hysteria2://`) are reported clearly instead of being silently ignored. |
+| QR codes | Profiles too large for a QR code show a message pointing to Copy instead of failing. |
+| Release pipeline | GitHub Actions now use the Node 24 versions of checkout and Java setup. |
+
 ## [4.1.0] - 2026-11-14 — 4SUPER Smart Connect
 
 ### Added
