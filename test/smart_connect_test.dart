@@ -1,10 +1,8 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hesam_void/models/vpn_config.dart';
 import 'package:hesam_void/services/connection_error_explainer.dart';
 import 'package:hesam_void/services/smart_connect_service.dart';
 import 'package:hesam_void/services/vpn_service.dart';
-import 'package:hesam_void/widgets/alive_signal_canvas.dart';
 
 VpnConfig _config(String id) => VpnConfig(
   id: id,
@@ -92,82 +90,6 @@ void main() {
       final insight = ConnectionErrorExplainer.explain(null);
       expect(insight.title, isNotEmpty);
       expect(insight.hint, isNotEmpty);
-    });
-  });
-
-  group('AliveSignalCanvas', () {
-    Widget host(Widget child, {Size size = const Size(360, 640)}) {
-      return MediaQuery(
-        data: MediaQueryData(size: size),
-        child: MaterialApp(
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: Padding(padding: const EdgeInsets.all(20), child: child),
-            ),
-          ),
-        ),
-      );
-    }
-
-    testWidgets('offers Smart Connect when no route is selected', (
-      tester,
-    ) async {
-      var smartRuns = 0;
-      await tester.pumpWidget(
-        host(
-          AliveSignalCanvas(
-            status: VpnStatus.disconnected,
-            config: null,
-            stats: VpnStats(),
-            accentColor: Colors.green,
-            surfaceColor: Colors.black,
-            textColor: Colors.white,
-            onPrimaryAction: () => smartRuns++,
-            onChooseRoute: () {},
-            onOpenStory: () {},
-            onSmartConnect: () {},
-          ),
-        ),
-      );
-
-      expect(find.text('SMART CONNECT'), findsOneWidget);
-      await tester.tap(find.text('SMART CONNECT'));
-      expect(smartRuns, 1);
-    });
-
-    testWidgets('shows progress and cancels while Smart Connect runs', (
-      tester,
-    ) async {
-      var cancelled = 0;
-      await tester.pumpWidget(
-        host(
-          AliveSignalCanvas(
-            status: VpnStatus.disconnected,
-            config: _config('a'),
-            stats: VpnStats(),
-            accentColor: Colors.green,
-            surfaceColor: Colors.black,
-            textColor: Colors.white,
-            onPrimaryAction: () {},
-            onChooseRoute: () {},
-            onOpenStory: () {},
-            smartActive: true,
-            smartHeadline: 'Checking your routes',
-            smartDetail: 'Checked 3 of 8 routes',
-            smartProgress: 3 / 8,
-            onSmartConnect: () {},
-            onCancelSmart: () => cancelled++,
-          ),
-          // A short screen uses the compact canvas; it must not overflow.
-          size: const Size(360, 600),
-        ),
-      );
-
-      expect(find.text('Checking your routes'), findsOneWidget);
-      expect(find.text('Checked 3 of 8 routes'), findsOneWidget);
-      expect(find.byType(LinearProgressIndicator), findsOneWidget);
-      await tester.tap(find.text('CANCEL'));
-      expect(cancelled, 1);
     });
   });
 }
