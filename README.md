@@ -20,6 +20,15 @@ The QR Code always points to the APK of the latest Release, so it stays valid fo
 
 > Android may ask you to allow installation from your browser or file manager. If an older build was signed with a different key, uninstall it before installing this test release.
 
+## New in 4.2 — Subscriptions
+
+| Capability | What the user gets |
+|---|---|
+| **Subscription folders** | A subscription link becomes one folder on the Servers tab with its routes inside, so the list stays tidy. |
+| **Usage at a glance** | Data used, allowance and days left when the provider shares them, plus best latency per folder. |
+| **One-tap updates** | Update keeps unchanged routes and their history, adds new ones and removes retired ones; folders refresh automatically when due. |
+| **Xray JSON** | Complete JSON profiles from subscriptions or the clipboard connect like any other route. |
+
 ## New in 4.1 — Smart Connect
 
 | Capability | What the user gets |
@@ -52,6 +61,8 @@ The QR Code always points to the APK of the latest Release, so it stays valid fo
 | Trojan | Yes | Xray VPN | Standard Trojan links are supported. |
 | Shadowsocks | Yes | Xray VPN | SIP002 and legacy credential encodings are parsed. |
 | NPVT SSH / SSH | Yes | SSH → loopback SOCKS5 → Xray VPN | Direct SSH, SSH over TLS and SSH over WebSocket are supported. |
+| Xray JSON (single or list) | Yes | Xray VPN | Complete configs from subscriptions or paste; a SOCKS inbound is added and the server outbound placed first when needed. |
+| Subscription links (base64, plain or JSON) | Yes | Per route | Shown as folders with usage, expiry and automatic updates. Clash and sing-box formats are reported as unsupported. |
 | SSH over SlowDNS | Import preserved | Not connected in v4 | The app reports this transport as unsupported rather than silently falling back to direct SSH. |
 
 ## Connection Navigator

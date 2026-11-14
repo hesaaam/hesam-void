@@ -7,6 +7,7 @@ import '../models/ssh_config.dart';
 import 'ssh_tunnel_service.dart';
 import 'split_tunneling_service.dart';
 import 'connection_health_service.dart';
+import 'xray_json_config.dart';
 
 /// VPN Connection States
 enum VpnStatus { disconnected, connecting, connected, disconnecting, error }
@@ -17,6 +18,10 @@ enum TunnelCheck { idle, checking, verified, failed }
 /// Error text recorded when the tunnel is up but no request passes through it.
 const String kTunnelNoInternetError =
     'Connected, but no internet passed through the tunnel.';
+
+/// Error text recorded when the engine never reports a started tunnel.
+const String kEngineStartTimeoutError =
+    'The VPN engine did not start this profile.';
 
 /// VPN Connection Statistics
 class VpnStats {
@@ -291,6 +296,45 @@ class VpnService extends ChangeNotifier {
     return verified;
   }
 
+  /// The engine reports nothing when it rejects a profile; it only keeps
+  /// announcing "connecting". Stop waiting after [_engineStartTimeout] and
+  /// show a clear error instead of an endless spinner.
+  static const Duration _engineStartTimeout = Duration(seconds: 20);
+
+  void _watchEngineStartup(VpnConfig config) {
+    final generation = _connectionGeneration;
+    Timer(_engineStartTimeout, () async {
+      if (generation != _connectionGeneration ||
+          _status != VpnStatus.connecting) {
+        return;
+      }
+      _suppressDropRecordingUntil = DateTime.now().add(
+        const Duration(seconds: 3),
+      );
+      try {
+        await flutterV2ray.stopV2Ray();
+      } catch (_) {
+        // The engine may not be running at all.
+      }
+      if (_sshProxyPort != null) {
+        _detachSshMonitor();
+        await SshTunnelService().disconnect();
+        _sshProxyPort = null;
+      }
+      if (generation != _connectionGeneration) return;
+      _resetTunnelCheck();
+      _status = VpnStatus.error;
+      _errorMessage = kEngineStartTimeoutError;
+      unawaited(
+        ConnectionHealthService().recordFailure(
+          config.id,
+          kEngineStartTimeoutError,
+        ),
+      );
+      notifyListeners();
+    });
+  }
+
   void _resetTunnelCheck() {
     _connectionGeneration++;
     _tunnelCheck = TunnelCheck.idle;
@@ -323,12 +367,7 @@ class VpnService extends ChangeNotifier {
       _errorMessage = null;
       notifyListeners();
 
-      // CRITICAL: Use FlutterV2ray.parseFromURL to parse the config
-      // This is the official way as per flutter_v2ray documentation
-      V2RayURL parser = FlutterV2ray.parseFromURL(config.rawUrl);
-
-      String remark = parser.remark.isNotEmpty ? parser.remark : config.name;
-      String fullConfig = parser.getFullConfiguration();
+      final (remark, fullConfig) = _engineConfig(config);
 
       if (kDebugMode) {
         debugPrint('[VpnService] Config parsed successfully. Remark: $remark');
@@ -367,6 +406,7 @@ class VpnService extends ChangeNotifier {
       if (kDebugMode) {
         debugPrint('[VpnService] V2Ray startV2Ray called successfully');
       }
+      _watchEngineStartup(config);
 
       return true;
     } catch (e) {
@@ -381,6 +421,16 @@ class VpnService extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  /// Remark and full engine JSON for a link or a stored Xray JSON profile.
+  (String, String) _engineConfig(VpnConfig config) {
+    if (config.isJson) {
+      return (config.name, XrayJsonConfig.prepareForEngine(config.rawUrl));
+    }
+    final parser = FlutterV2ray.parseFromURL(config.rawUrl);
+    final remark = parser.remark.isNotEmpty ? parser.remark : config.name;
+    return (remark, parser.getFullConfiguration());
   }
 
   /// Connect to SSH server using dartssh2 + V2Ray VPN mode
@@ -542,6 +592,7 @@ class VpnService extends ChangeNotifier {
 
       // Monitor SSH stats
       _monitorSshStats(sshService);
+      _watchEngineStartup(config);
 
       if (kDebugMode) {
         debugPrint('[VpnService] SSH + VPN started successfully!');
@@ -773,9 +824,7 @@ class VpnService extends ChangeNotifier {
     if (!_isInitialized && !await initialize()) return -1;
 
     try {
-      // Parse the config URL
-      V2RayURL parser = FlutterV2ray.parseFromURL(config.rawUrl);
-      String fullConfig = parser.getFullConfiguration();
+      final (_, fullConfig) = _engineConfig(config);
 
       // Use flutter_v2ray's getServerDelay method
       final delay = await flutterV2ray.getServerDelay(config: fullConfig);

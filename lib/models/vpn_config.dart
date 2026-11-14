@@ -1,7 +1,7 @@
 import 'package:hive/hive.dart';
 
 /// Supported VPN Protocol Types
-enum VpnProtocol { vless, vmess, trojan, shadowsocks, ssh, unknown }
+enum VpnProtocol { vless, vmess, trojan, shadowsocks, ssh, json, unknown }
 
 extension VpnProtocolExtension on VpnProtocol {
   String get displayName {
@@ -16,6 +16,8 @@ extension VpnProtocolExtension on VpnProtocol {
         return 'Shadowsocks';
       case VpnProtocol.ssh:
         return 'SSH';
+      case VpnProtocol.json:
+        return 'Xray JSON';
       case VpnProtocol.unknown:
         return 'Unknown';
     }
@@ -33,6 +35,8 @@ extension VpnProtocolExtension on VpnProtocol {
         return 'SS';
       case VpnProtocol.ssh:
         return 'SSH';
+      case VpnProtocol.json:
+        return 'JSON';
       case VpnProtocol.unknown:
         return '??';
     }
@@ -120,6 +124,10 @@ class VpnConfig extends HiveObject {
   @HiveField(23)
   String? countryCode;
 
+  /// The subscription this route came from; null for routes added by hand.
+  @HiveField(24)
+  String? subscriptionId;
+
   VpnConfig({
     required this.id,
     required this.name,
@@ -145,6 +153,7 @@ class VpnConfig extends HiveObject {
     this.isActive = false,
     this.country,
     this.countryCode,
+    this.subscriptionId,
   }) : createdAt = createdAt ?? DateTime.now();
 
   VpnProtocol get protocol {
@@ -158,6 +167,8 @@ class VpnConfig extends HiveObject {
       case 'ss':
       case 'shadowsocks':
         return VpnProtocol.shadowsocks;
+      case 'json':
+        return VpnProtocol.json;
       case 'ssh':
       case 'ssh-direct':
       case 'ssh-ws':
@@ -172,6 +183,12 @@ class VpnConfig extends HiveObject {
 
   /// Check if this is an SSH config
   bool get isSsh => protocol == VpnProtocol.ssh;
+
+  /// A complete Xray JSON configuration stored in [rawUrl].
+  bool get isJson => protocol == VpnProtocol.json;
+
+  /// Whether this route belongs to a subscription folder.
+  bool get isFromSubscription => subscriptionId != null;
 
   /// Get SSH username (stored in uuid field for SSH configs)
   String? get sshUsername => isSsh ? uuid : null;
@@ -267,6 +284,7 @@ class VpnConfig extends HiveObject {
     bool? isActive,
     String? country,
     String? countryCode,
+    String? subscriptionId,
     bool clearPing = false,
   }) {
     return VpnConfig(
@@ -294,6 +312,7 @@ class VpnConfig extends HiveObject {
       isActive: isActive ?? this.isActive,
       country: country ?? this.country,
       countryCode: countryCode ?? this.countryCode,
+      subscriptionId: subscriptionId ?? this.subscriptionId,
     );
   }
 }
@@ -357,13 +376,14 @@ class VpnConfigAdapter extends TypeAdapter<VpnConfig> {
       isActive: fields[21] as bool? ?? false,
       country: fields[22] as String?,
       countryCode: fields[23] as String?,
+      subscriptionId: fields[24] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, VpnConfig config) {
     writer
-      ..writeByte(24)
+      ..writeByte(25)
       ..writeByte(0)
       ..write(config.id)
       ..writeByte(1)
@@ -411,6 +431,8 @@ class VpnConfigAdapter extends TypeAdapter<VpnConfig> {
       ..writeByte(22)
       ..write(config.country)
       ..writeByte(23)
-      ..write(config.countryCode);
+      ..write(config.countryCode)
+      ..writeByte(24)
+      ..write(config.subscriptionId);
   }
 }

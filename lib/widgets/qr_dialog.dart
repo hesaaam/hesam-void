@@ -220,17 +220,20 @@ class QRDisplayDialog extends StatelessWidget {
 class ImportOptionsDialog extends StatelessWidget {
   final VoidCallback onClipboardImport;
   final VoidCallback onQRScan;
+  final VoidCallback? onSubscription;
 
   const ImportOptionsDialog({
     super.key,
     required this.onClipboardImport,
     required this.onQRScan,
+    this.onSubscription,
   });
 
   static Future<void> show(
     BuildContext context, {
     required VoidCallback onClipboardImport,
     required VoidCallback onQRScan,
+    VoidCallback? onSubscription,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -238,6 +241,7 @@ class ImportOptionsDialog extends StatelessWidget {
       builder: (context) => ImportOptionsDialog(
         onClipboardImport: onClipboardImport,
         onQRScan: onQRScan,
+        onSubscription: onSubscription,
       ),
     );
   }
@@ -322,6 +326,72 @@ class ImportOptionsDialog extends StatelessWidget {
                   ),
                 ],
               ),
+
+              if (onSubscription != null) ...[
+                const SizedBox(height: 16),
+                InkWell(
+                  onTap: () {
+                    Navigator.pop(context);
+                    onSubscription!();
+                  },
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryGreen.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: AppTheme.primaryGreen.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primaryGreen.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.folder_special_rounded,
+                            color: AppTheme.primaryGreen,
+                            size: 26,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Subscription',
+                                style: TextStyle(
+                                  color: AppTheme.primaryGreen,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  fontFamily: 'JetBrainsMono',
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                'Add a subscription link as a folder',
+                                style: TextStyle(
+                                  color: AppTheme.textMuted,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          color: AppTheme.primaryGreen,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
 
               const SizedBox(height: 24),
             ],
