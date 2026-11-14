@@ -4,8 +4,8 @@ import qrcode
 from qrcode.constants import ERROR_CORRECT_M
 
 APK_URL = (
-    "https://github.com/hesaaam/hesam-void/releases/download/"
-    "v4.0.2/hesam-void-4super-universal.apk"
+    "https://github.com/hesaaam/hesam-void/releases/latest/download/"
+    "hesam-void-4super-universal.apk"
 )
 OUTPUT_PATH = Path("assets/images/hesam-void-4super-download-qr.png")
 

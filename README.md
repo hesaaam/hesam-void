@@ -9,16 +9,25 @@ Hesam Void is an Android client for people who manage their own proxy and SSH pr
 ## Download 4SUPER APK
 
 <p align="center">
-  <a href="https://github.com/hesaaam/hesam-void/releases/download/v4.0.2/hesam-void-4super-universal.apk">
+  <a href="https://github.com/hesaaam/hesam-void/releases/latest/download/hesam-void-4super-universal.apk">
     <img src="assets/images/hesam-void-4super-download-qr.png" width="280" alt="Scan to download Hesam Void 4SUPER Universal APK directly">
   </a>
 </p>
 
 <p align="center"><strong>Scan the QR Code to download the 4SUPER Universal APK directly.</strong></p>
 
-The QR Code contains the direct APK asset URL, not the Release page. On most Android phones, scanning opens the browser download flow immediately. You can also use the direct link: [Download Hesam Void 4SUPER Universal APK](https://github.com/hesaaam/hesam-void/releases/download/v4.0.2/hesam-void-4super-universal.apk).
+The QR Code always points to the APK of the latest Release, so it stays valid for future versions. On most Android phones, scanning opens the browser download flow immediately. You can also use the direct link: [Download Hesam Void 4SUPER Universal APK](https://github.com/hesaaam/hesam-void/releases/latest/download/hesam-void-4super-universal.apk).
 
 > Android may ask you to allow installation from your browser or file manager. If an older build was signed with a different key, uninstall it before installing this test release.
+
+## New in 4.1 — Smart Connect
+
+| Capability | What the user gets |
+|---|---|
+| **Smart Connect** | One tap checks every saved route, measures real traffic on the most promising ones, connects to the best and automatically tries the next route if one fails. |
+| **Verified internet** | After connecting, a test request travels through the tunnel; the app shows `Internet verified • N ms` or a clear warning with a one-tap alternative. |
+| **Readable errors** | Failures are explained in plain language with a suggested next step instead of raw engine messages. |
+| **Calmer, lighter app** | No vibration every second while connected, lower background CPU use, faster start and the last selected route remembered. |
 
 ## What makes 4SUPER different
 
@@ -59,8 +68,8 @@ The app cannot guarantee that a third-party server is available, safe, private o
 
 ## Use the app
 
-1. Open **SERVERS** and use the add action to import from clipboard, scan a QR code, or enter a supported URL manually.
-2. Select a profile and run a ping check when you want initial local evidence.
+1. Open **SERVERS** and use the add action to import from clipboard, scan a QR code, or enter a supported URL manually. Several links pasted at once are imported together.
+2. Press **Smart Connect** to let the app test your routes and connect to the best one, or select a profile and run a health check yourself.
 3. Open **CONNECT**. The Connection Navigator displays the selected profile’s known health or recommends a better locally observed profile.
 4. Press the connect control and approve Android’s VPN permission when asked.
 5. Configure Auto-reconnect and Split Tunneling in settings only when you need them. A manual disconnect is never automatically retried.
@@ -86,7 +95,7 @@ build/app/outputs/flutter-apk/app-release.apk
 
 Every new user-facing network feature should satisfy three requirements before it is shown as stable: it must be wired into the actual connection pipeline, validated through tests, and documented without overclaiming. Features that require a platform-specific implementation should fail clearly on unsupported platforms instead of simulating a result.
 
-The repository’s `test/` directory contains regression tests for the configuration parser, NPVT SSH round-trip behavior and the app splash lifecycle. Run the checks above before opening a pull request.
+The repository’s `test/` directory contains regression tests for the configuration parser, NPVT SSH round-trip behavior, Smart Connect route ranking, error explanations, the connection canvas and the app splash lifecycle. Run the checks above before opening a pull request.
 
 ## License
 
