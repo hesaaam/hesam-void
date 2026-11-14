@@ -2,7 +2,7 @@
 
 All notable changes to Hesam Void are documented in this file.
 
-## [4.1.0] - Unreleased — 4SUPER Smart Connect
+## [4.1.0] - 2026-11-14 — 4SUPER Smart Connect
 
 ### Added
 
