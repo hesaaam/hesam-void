@@ -311,6 +311,39 @@ void main() {
       expect(prepared['routing']['rules'], hasLength(1));
     });
 
+    test('translates settings newer than the bundled engine', () {
+      final profile = _xray();
+      (profile['outbounds'] as List).add({
+        'tag': 'dns-out',
+        'protocol': 'dns',
+        'settings': {'nonIPQuery': 'reject'},
+      });
+      final prepared = jsonDecode(
+        XrayJsonConfig.prepareForEngine(jsonEncode(profile)),
+      );
+      final dnsOut = (prepared['outbounds'] as List).firstWhere(
+        (o) => o['protocol'] == 'dns',
+      );
+      expect(dnsOut['settings']['nonIPQuery'], 'drop');
+    });
+
+    test('explains transports the bundled engine cannot run', () {
+      final profile = _xray();
+      ((profile['outbounds'] as List).first as Map)['streamSettings'] = {
+        'network': 'xhttp',
+      };
+      expect(
+        () => XrayJsonConfig.prepareForEngine(jsonEncode(profile)),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('XHTTP'),
+          ),
+        ),
+      );
+    });
+
     test('rejects a profile without a usable server', () {
       expect(
         () => XrayJsonConfig.prepareForEngine(

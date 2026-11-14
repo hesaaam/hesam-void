@@ -19,6 +19,10 @@ enum TunnelCheck { idle, checking, verified, failed }
 const String kTunnelNoInternetError =
     'Connected, but no internet passed through the tunnel.';
 
+/// Error text recorded when the engine never reports a started tunnel.
+const String kEngineStartTimeoutError =
+    'The VPN engine did not start this profile.';
+
 /// VPN Connection Statistics
 class VpnStats {
   final int uploadSpeed; // bytes per second
@@ -292,6 +296,45 @@ class VpnService extends ChangeNotifier {
     return verified;
   }
 
+  /// The engine reports nothing when it rejects a profile; it only keeps
+  /// announcing "connecting". Stop waiting after [_engineStartTimeout] and
+  /// show a clear error instead of an endless spinner.
+  static const Duration _engineStartTimeout = Duration(seconds: 20);
+
+  void _watchEngineStartup(VpnConfig config) {
+    final generation = _connectionGeneration;
+    Timer(_engineStartTimeout, () async {
+      if (generation != _connectionGeneration ||
+          _status != VpnStatus.connecting) {
+        return;
+      }
+      _suppressDropRecordingUntil = DateTime.now().add(
+        const Duration(seconds: 3),
+      );
+      try {
+        await flutterV2ray.stopV2Ray();
+      } catch (_) {
+        // The engine may not be running at all.
+      }
+      if (_sshProxyPort != null) {
+        _detachSshMonitor();
+        await SshTunnelService().disconnect();
+        _sshProxyPort = null;
+      }
+      if (generation != _connectionGeneration) return;
+      _resetTunnelCheck();
+      _status = VpnStatus.error;
+      _errorMessage = kEngineStartTimeoutError;
+      unawaited(
+        ConnectionHealthService().recordFailure(
+          config.id,
+          kEngineStartTimeoutError,
+        ),
+      );
+      notifyListeners();
+    });
+  }
+
   void _resetTunnelCheck() {
     _connectionGeneration++;
     _tunnelCheck = TunnelCheck.idle;
@@ -363,6 +406,7 @@ class VpnService extends ChangeNotifier {
       if (kDebugMode) {
         debugPrint('[VpnService] V2Ray startV2Ray called successfully');
       }
+      _watchEngineStartup(config);
 
       return true;
     } catch (e) {
@@ -548,6 +592,7 @@ class VpnService extends ChangeNotifier {
 
       // Monitor SSH stats
       _monitorSshStats(sshService);
+      _watchEngineStartup(config);
 
       if (kDebugMode) {
         debugPrint('[VpnService] SSH + VPN started successfully!');

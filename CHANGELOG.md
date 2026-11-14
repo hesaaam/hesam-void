@@ -27,6 +27,8 @@ All notable changes to Hesam Void are documented in this file.
 | Area | Fix |
 |---|---|
 | Xray JSON DNS | JSON profiles with DNS-over-HTTPS or object DNS entries (common in panel subscriptions) no longer fail to start the tunnel. Their resolvers are reduced to IP addresses for Android, and DNS queries are routed through the server so answers are not tampered with. |
+| Xray JSON compatibility | Settings written for newer Xray versions that the bundled engine rejects at start-up are translated where an equivalent exists (for example `nonIPQuery: reject`). Profiles using the XHTTP transport are reported as unsupported instead of hanging. |
+| Stuck connecting | When the engine rejects a profile it reports nothing, which left the app on "Securing your route". The app now stops after 20 seconds with a clear explanation, and Smart Connect moves on to the next route. |
 
 ## [4.1.0] - 2026-11-14 — 4SUPER Smart Connect
 

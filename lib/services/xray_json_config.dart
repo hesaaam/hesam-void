@@ -167,7 +167,39 @@ class XrayJsonConfig {
     //    and the resolver is routed through the server so answers are not
     //    tampered with on filtered networks.
     _simplifyDnsForTunnel(config, server['tag'].toString());
+
+    // 5. The bundled engine is Xray 1.8.17. Newer panels write settings it
+    //    rejects at start-up; translate the ones that have an equivalent and
+    //    report the ones that cannot run.
+    _adaptForBundledCore(config);
     return jsonEncode(config);
+  }
+
+  /// Transports newer than the bundled engine.
+  static const Set<String> _unsupportedTransports = {'xhttp'};
+
+  static void _adaptForBundledCore(Map<String, dynamic> config) {
+    final outbounds = config['outbounds'];
+    if (outbounds is! List) return;
+    for (final outbound in outbounds) {
+      if (outbound is! Map) continue;
+      final settings = outbound['settings'];
+      // `reject` was added after 1.8; `drop` is the closest older value.
+      if (outbound['protocol'] == 'dns' &&
+          settings is Map &&
+          settings['nonIPQuery'] == 'reject') {
+        settings['nonIPQuery'] = 'drop';
+      }
+    }
+    final server = outbounds.isEmpty ? null : outbounds.first;
+    final stream = server is Map ? server['streamSettings'] : null;
+    final network = stream is Map ? stream['network']?.toString() : null;
+    if (network != null && _unsupportedTransports.contains(network)) {
+      throw FormatException(
+        'This profile uses the ${network.toUpperCase()} transport, which is '
+        'not supported by this app\'s VPN engine yet.',
+      );
+    }
   }
 
   static void _simplifyDnsForTunnel(
