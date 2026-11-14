@@ -22,6 +22,12 @@ All notable changes to Hesam Void are documented in this file.
 | QR codes | Profiles too large for a QR code show a message pointing to Copy instead of failing. |
 | Release pipeline | GitHub Actions now use the Node 24 versions of checkout and Java setup. |
 
+### Fixed
+
+| Area | Fix |
+|---|---|
+| Xray JSON DNS | JSON profiles with DNS-over-HTTPS or object DNS entries (common in panel subscriptions) no longer fail to start the tunnel. Their resolvers are reduced to IP addresses for Android, and DNS queries are routed through the server so answers are not tampered with. |
+
 ## [4.1.0] - 2026-11-14 — 4SUPER Smart Connect
 
 ### Added

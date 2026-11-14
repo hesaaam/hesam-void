@@ -256,6 +256,61 @@ void main() {
       expect(inbounds.first['port'], 2080);
     });
 
+    test('reduces DoH and object DNS servers to IPs for the tunnel', () {
+      // Shape of a real panel profile (BPB-style) that failed to connect.
+      final profile = _xray()
+        ..['dns'] = {
+          'hosts': {'geosite:category-ads-all': '#3'},
+          'servers': [
+            {'address': 'https://8.8.8.8/dns-query', 'tag': 'remote-dns'},
+            {
+              'address': '8.8.8.8',
+              'domains': ['geosite:category-ir'],
+              'skipFallback': true,
+            },
+            {'address': 'https://dns.google/dns-query'},
+            'localhost',
+          ],
+          'queryStrategy': 'UseIP',
+          'tag': 'dns',
+        };
+      final prepared = jsonDecode(
+        XrayJsonConfig.prepareForEngine(jsonEncode(profile)),
+      );
+      final dns = prepared['dns'] as Map;
+      expect(dns['servers'], ['8.8.8.8']);
+      expect(dns['hosts'], isNotEmpty);
+      expect(dns['queryStrategy'], 'UseIP');
+      // DNS queries now leave through the server.
+      final first = (prepared['routing']['rules'] as List).first as Map;
+      expect(first['inboundTag'], [dns['tag']]);
+      expect(first['outboundTag'], 'proxy');
+    });
+
+    test('falls back to public resolvers when no DNS IP is known', () {
+      final profile = _xray()
+        ..['dns'] = {
+          'servers': ['https://dns.google/dns-query'],
+        };
+      final prepared = jsonDecode(
+        XrayJsonConfig.prepareForEngine(jsonEncode(profile)),
+      );
+      expect(prepared['dns']['servers'], ['1.1.1.1', '8.8.8.8']);
+    });
+
+    test('leaves plain IP DNS lists and routing untouched', () {
+      final profile = _xray()
+        ..['dns'] = {
+          'servers': ['1.1.1.1', '8.8.4.4'],
+        };
+      final prepared = jsonDecode(
+        XrayJsonConfig.prepareForEngine(jsonEncode(profile)),
+      );
+      expect(prepared['dns']['servers'], ['1.1.1.1', '8.8.4.4']);
+      expect(prepared['dns'].containsKey('tag'), isFalse);
+      expect(prepared['routing']['rules'], hasLength(1));
+    });
+
     test('rejects a profile without a usable server', () {
       expect(
         () => XrayJsonConfig.prepareForEngine(

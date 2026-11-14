@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:uuid/uuid.dart';
 
@@ -17,6 +18,8 @@ class XrayJsonConfig {
   static const _uuid = Uuid();
   static const int defaultSocksPort = 10808;
   static const String _proxyTag = 'proxy';
+  static const String _tunnelDnsTag = 'dns-through-proxy';
+  static const List<String> _fallbackDns = ['1.1.1.1', '8.8.8.8'];
 
   /// Outbound protocols whose server can be read by the engine.
   static const Set<String> _serverProtocols = {
@@ -152,8 +155,72 @@ class XrayJsonConfig {
         _renameReferences(config, oldTag, _proxyTag);
       }
     }
+    // An outbound needs a tag for the DNS route below.
+    if (server['tag'] == null || server['tag'].toString().isEmpty) {
+      server['tag'] = proxyTagTaken ? 'engine-proxy' : _proxyTag;
+    }
     config['outbounds'] = outbounds;
+
+    // 4. The engine also hands `dns.servers` to Android as the tunnel's DNS
+    //    servers, which accepts plain IP addresses only. Object or DoH
+    //    entries make the tunnel fail to start, so they are reduced to IPs,
+    //    and the resolver is routed through the server so answers are not
+    //    tampered with on filtered networks.
+    _simplifyDnsForTunnel(config, server['tag'].toString());
     return jsonEncode(config);
+  }
+
+  static void _simplifyDnsForTunnel(
+    Map<String, dynamic> config,
+    String proxyTag,
+  ) {
+    final dns = config['dns'];
+    if (dns is! Map || dns['servers'] is! List) return;
+    final servers = dns['servers'] as List;
+    final plain = <String>[];
+    var changed = false;
+    for (final entry in servers) {
+      if (entry is String && InternetAddress.tryParse(entry) != null) {
+        plain.add(entry);
+        continue;
+      }
+      changed = true;
+      final address = entry is Map ? entry['address']?.toString() : '$entry';
+      final ip = _ipOfDnsAddress(address);
+      if (ip != null) plain.add(ip);
+    }
+    if (!changed) return;
+
+    final unique = plain.toSet().toList();
+    config['dns'] = Map<String, dynamic>.from(dns)
+      ..['servers'] = unique.isEmpty ? _fallbackDns : unique
+      ..['tag'] = _tunnelDnsTag;
+
+    final routing = config['routing'] is Map
+        ? Map<String, dynamic>.from(config['routing'] as Map)
+        : <String, dynamic>{};
+    final rules = <dynamic>[
+      <String, dynamic>{
+        'type': 'field',
+        'inboundTag': [_tunnelDnsTag],
+        'outboundTag': proxyTag,
+      },
+      ...(routing['rules'] is List ? routing['rules'] as List : const []),
+    ];
+    routing['rules'] = rules;
+    config['routing'] = routing;
+  }
+
+  /// IP address of a DNS server written as `8.8.8.8`, `8.8.8.8:53`,
+  /// `https://8.8.8.8/dns-query`, `tcp://8.8.8.8:53` and similar.
+  static String? _ipOfDnsAddress(String? value) {
+    final text = value?.trim();
+    if (text == null || text.isEmpty) return null;
+    if (InternetAddress.tryParse(text) != null) return text;
+    final withScheme = text.contains('://') ? text : 'dns://$text';
+    final host = Uri.tryParse(withScheme)?.host;
+    if (host == null || host.isEmpty) return null;
+    return InternetAddress.tryParse(host) != null ? host : null;
   }
 
   static Map<String, dynamic>? _serverOutbound(Map<String, dynamic> json) {
