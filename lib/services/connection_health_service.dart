@@ -277,6 +277,33 @@ class ConnectionHealthService extends ChangeNotifier {
     );
   }
 
+  /// Records many latency results with a single write to encrypted storage.
+  Future<void> recordProbes(Map<String, int?> results) async {
+    if (results.isEmpty) return;
+    await initialize();
+    final now = DateTime.now();
+    for (final entry in results.entries) {
+      if (entry.key.isEmpty) continue;
+      final latency = entry.value;
+      final success = latency != null && latency >= 0;
+      _events.add(
+        ConnectionHealthEvent(
+          configId: entry.key,
+          type: success
+              ? ConnectionEventType.probeSuccess
+              : ConnectionEventType.probeFailure,
+          at: now,
+          latencyMs: success ? latency : null,
+          reason: success ? null : 'Latency test failed',
+        ),
+      );
+      _trimProfile(entry.key);
+    }
+    _prune();
+    await _persist();
+    notifyListeners();
+  }
+
   Future<void> forget(String configId) async {
     _events.removeWhere((event) => event.configId == configId);
     await _persist();

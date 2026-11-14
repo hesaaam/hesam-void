@@ -94,68 +94,39 @@ class PingService {
         client.close();
       }
     } catch (e) {
-      // If HTTPS fails, try simulated ping based on common latencies
-      return _simulatePing(address);
+      // Never invent a latency value when the measurement fails.
+      return null;
     }
   }
 
-  /// Simulate ping for web when actual ping isn't possible
-  static Future<int?> _simulatePing(String address) async {
-    // Simulate network delay
-    await Future.delayed(const Duration(milliseconds: 100));
-
-    // Generate realistic ping based on server location hints
-    final lowerAddress = address.toLowerCase();
-
-    if (lowerAddress.contains('ir') || lowerAddress.contains('iran')) {
-      return 50 + (DateTime.now().millisecond % 50);
-    } else if (lowerAddress.contains('de') ||
-        lowerAddress.contains('germany') ||
-        lowerAddress.contains('nl') ||
-        lowerAddress.contains('netherlands')) {
-      return 120 + (DateTime.now().millisecond % 80);
-    } else if (lowerAddress.contains('us') ||
-        lowerAddress.contains('america')) {
-      return 200 + (DateTime.now().millisecond % 100);
-    } else if (lowerAddress.contains('sg') ||
-        lowerAddress.contains('singapore') ||
-        lowerAddress.contains('jp') ||
-        lowerAddress.contains('japan')) {
-      return 180 + (DateTime.now().millisecond % 80);
-    }
-
-    // Default ping range
-    return 100 + (DateTime.now().millisecond % 150);
-  }
-
-  /// Test ping for multiple configs - OPTIMIZED with concurrent batches
+  /// Tests many profiles with a bounded worker pool.
+  ///
+  /// [onResult] fires as soon as each profile finishes, so the UI can show
+  /// results progressively instead of waiting for the slowest batch.
   static Future<Map<String, int?>> testMultiplePings(
     List<VpnConfig> configs, {
-    int concurrency = 10, // Test 10 configs at a time
+    int concurrency = 10,
     void Function(int completed, int total)? onProgress,
+    void Function(VpnConfig config, int? ping)? onResult,
   }) async {
     final results = <String, int?>{};
+    if (configs.isEmpty) return results;
 
-    // Process in batches for better performance
-    for (int i = 0; i < configs.length; i += concurrency) {
-      final batch = configs.skip(i).take(concurrency).toList();
-
-      // Test batch concurrently
-      final futures = batch.map((config) async {
+    var next = 0;
+    var completed = 0;
+    Future<void> worker() async {
+      while (next < configs.length) {
+        final config = configs[next++];
         final ping = await testPing(config, useCache: false);
-        return MapEntry(config.id, ping);
-      });
-
-      final entries = await Future.wait(futures);
-      for (final entry in entries) {
-        results[entry.key] = entry.value;
+        results[config.id] = ping;
+        completed++;
+        onResult?.call(config, ping);
+        onProgress?.call(completed, configs.length);
       }
-
-      // Report progress
-      final completed = (i + batch.length).clamp(0, configs.length);
-      onProgress?.call(completed, configs.length);
     }
 
+    final workers = concurrency.clamp(1, configs.length);
+    await Future.wait(List.generate(workers, (_) => worker()));
     return results;
   }
 

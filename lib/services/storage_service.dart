@@ -32,7 +32,15 @@ class StorageService {
     ),
   );
 
-  static Future<void> initialize() async {
+  static Future<void>? _initializing;
+
+  /// Safe to call from several services at once: they share one open.
+  static Future<void> initialize() {
+    if (_isInitialized) return Future<void>.value();
+    return _initializing ??= _open().whenComplete(() => _initializing = null);
+  }
+
+  static Future<void> _open() async {
     if (_isInitialized) return;
 
     await Hive.initFlutter();

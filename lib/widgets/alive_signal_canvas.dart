@@ -22,6 +22,15 @@ class AliveSignalCanvas extends StatelessWidget {
   final bool reduceMotion;
   final bool disableMotion;
 
+  /// Smart Connect presentation. While [smartActive] is true the canvas shows
+  /// its progress and the primary action cancels the run.
+  final bool smartActive;
+  final String? smartHeadline;
+  final String? smartDetail;
+  final double? smartProgress;
+  final VoidCallback? onSmartConnect;
+  final VoidCallback? onCancelSmart;
+
   const AliveSignalCanvas({
     super.key,
     required this.status,
@@ -35,12 +44,34 @@ class AliveSignalCanvas extends StatelessWidget {
     required this.onOpenStory,
     this.reduceMotion = false,
     this.disableMotion = false,
+    this.smartActive = false,
+    this.smartHeadline,
+    this.smartDetail,
+    this.smartProgress,
+    this.onSmartConnect,
+    this.onCancelSmart,
   });
 
   bool get _isBusy =>
-      status == VpnStatus.connecting || status == VpnStatus.disconnecting;
+      smartActive ||
+      status == VpnStatus.connecting ||
+      status == VpnStatus.disconnecting;
+
+  bool get _canSmartConnect =>
+      onSmartConnect != null &&
+      !smartActive &&
+      (status == VpnStatus.disconnected || status == VpnStatus.error);
+
+  VoidCallback? get _primaryHandler {
+    if (smartActive) return onCancelSmart;
+    if (status == VpnStatus.connecting || status == VpnStatus.disconnecting) {
+      return null;
+    }
+    return onPrimaryAction;
+  }
 
   Color get _statusColor {
+    if (smartActive) return const Color(0xFFFFB020);
     switch (status) {
       case VpnStatus.connected:
         return const Color(0xFF20E870);
@@ -55,6 +86,7 @@ class AliveSignalCanvas extends StatelessWidget {
   }
 
   IconData get _statusIcon {
+    if (smartActive) return Icons.auto_awesome_rounded;
     switch (status) {
       case VpnStatus.connected:
         return Icons.shield_rounded;
@@ -69,6 +101,7 @@ class AliveSignalCanvas extends StatelessWidget {
   }
 
   String get _eyebrow {
+    if (smartActive) return 'SMART CONNECT';
     switch (status) {
       case VpnStatus.connected:
         return 'PROTECTION ACTIVE';
@@ -84,6 +117,7 @@ class AliveSignalCanvas extends StatelessWidget {
   }
 
   String get _headline {
+    if (smartActive) return smartHeadline ?? 'Finding your best route';
     switch (status) {
       case VpnStatus.connected:
         return config == null ? 'Protected' : 'Protected on ${config!.name}';
@@ -99,6 +133,7 @@ class AliveSignalCanvas extends StatelessWidget {
   }
 
   String get _supportingText {
+    if (smartActive) return smartDetail ?? 'Working…';
     switch (status) {
       case VpnStatus.connected:
         return '${stats.downloadSpeedStr} down  •  ${stats.uploadSpeedStr} up';
@@ -116,6 +151,7 @@ class AliveSignalCanvas extends StatelessWidget {
   }
 
   String get _primaryLabel {
+    if (smartActive) return 'CANCEL';
     switch (status) {
       case VpnStatus.connected:
         return 'DISCONNECT';
@@ -125,7 +161,8 @@ class AliveSignalCanvas extends StatelessWidget {
       case VpnStatus.error:
         return 'TRY AGAIN';
       case VpnStatus.disconnected:
-        return config == null ? 'CHOOSE A ROUTE' : 'PROTECT NOW';
+        if (config != null) return 'PROTECT NOW';
+        return onSmartConnect != null ? 'SMART CONNECT' : 'CHOOSE A ROUTE';
     }
   }
 
@@ -138,7 +175,9 @@ class AliveSignalCanvas extends StatelessWidget {
       container: true,
       label: 'Connection state: $_headline. $_supportingText',
       child: Container(
-        height: canvasHeight,
+        // A minimum height keeps the hero shape, while content may grow on
+        // short screens or with large system font sizes instead of clipping.
+        constraints: BoxConstraints(minHeight: canvasHeight),
         width: double.infinity,
         decoration: BoxDecoration(
           color: surfaceColor.withValues(alpha: 0.72),
@@ -153,6 +192,7 @@ class AliveSignalCanvas extends StatelessWidget {
           ],
         ),
         child: Stack(
+          alignment: Alignment.center,
           children: [
             Positioned.fill(
               child: TweenAnimationBuilder<double>(
@@ -182,6 +222,7 @@ class AliveSignalCanvas extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Row(
                     children: [
@@ -221,9 +262,9 @@ class AliveSignalCanvas extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const Spacer(),
+                  SizedBox(height: compact ? 4 : 14),
                   GestureDetector(
-                    onTap: _isBusy ? null : onPrimaryAction,
+                    onTap: _primaryHandler,
                     child: Semantics(
                       button: true,
                       label: _primaryLabel,
@@ -278,20 +319,37 @@ class AliveSignalCanvas extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: textColor.withValues(alpha: 0.56),
+                      color: textColor.withValues(alpha: 0.62),
                       fontFamily: 'JetBrainsMono',
-                      fontSize: 10.5,
+                      fontSize: 12,
                     ),
                   ),
-                  const Spacer(),
+                  if (smartActive) ...[
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: 180,
+                      child: LinearProgressIndicator(
+                        value: smartProgress,
+                        minHeight: 3,
+                        borderRadius: BorderRadius.circular(3),
+                        color: _statusColor,
+                        backgroundColor: textColor.withValues(alpha: 0.1),
+                      ),
+                    ),
+                  ],
+                  SizedBox(height: compact ? 14 : 22),
                   Row(
                     children: [
                       Expanded(
                         child: OutlinedButton.icon(
-                          onPressed: _isBusy ? null : onPrimaryAction,
+                          onPressed: _primaryHandler,
                           icon: Icon(
-                            status == VpnStatus.connected
+                            smartActive
+                                ? Icons.close_rounded
+                                : status == VpnStatus.connected
                                 ? Icons.lock_open_rounded
+                                : config == null && onSmartConnect != null
+                                ? Icons.auto_awesome_rounded
                                 : Icons.shield_rounded,
                             size: 17,
                           ),
@@ -310,6 +368,30 @@ class AliveSignalCanvas extends StatelessWidget {
                           ),
                         ),
                       ),
+                      if (_canSmartConnect && config != null) ...[
+                        const SizedBox(width: 10),
+                        Tooltip(
+                          message:
+                              'Smart Connect: test and pick the best route',
+                          child: OutlinedButton(
+                            onPressed: onSmartConnect,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _statusColor,
+                              side: BorderSide(
+                                color: _statusColor.withValues(alpha: 0.45),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 11,
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.auto_awesome_rounded,
+                              size: 18,
+                            ),
+                          ),
+                        ),
+                      ],
                       const SizedBox(width: 10),
                       OutlinedButton(
                         onPressed: _isBusy ? null : onChooseRoute,

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import '../models/vpn_config.dart';
 import '../services/storage_service.dart';
@@ -7,11 +9,16 @@ import '../services/connection_health_service.dart';
 
 /// State Management Provider for VPN Configurations
 class ConfigProvider extends ChangeNotifier {
+  static const _selectedConfigKey = 'selected_config_id_v1';
+
   List<VpnConfig> _configs = [];
   bool _isLoading = false;
   String? _error;
   bool _isTestingPing = false;
   String? _testingConfigId;
+  final Set<String> _testingIds = <String>{};
+  int _checkCompleted = 0;
+  int _checkTotal = 0;
   VpnConfig? _selectedConfig;
 
   // Getters
@@ -23,6 +30,13 @@ class ConfigProvider extends ChangeNotifier {
   VpnConfig? get selectedConfig => _selectedConfig;
   int get configCount => _configs.length;
   bool get hasConfigs => _configs.isNotEmpty;
+
+  /// Progress of the current "check all" run, e.g. 7 of 20.
+  int get checkCompleted => _checkCompleted;
+  int get checkTotal => _checkTotal;
+
+  /// Whether a latency check for [id] is currently in flight.
+  bool isConfigTesting(String id) => _testingIds.contains(id);
 
   /// Initialize and load configs from storage
   Future<void> initialize() async {
@@ -36,6 +50,17 @@ class ConfigProvider extends ChangeNotifier {
 
       // Sort by creation date (newest first)
       _configs.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      // Restore the route the user chose last time.
+      final selectedId = StorageService.getSetting<String>(_selectedConfigKey);
+      if (selectedId != null) {
+        for (final config in _configs) {
+          if (config.id == selectedId) {
+            _selectedConfig = config;
+            break;
+          }
+        }
+      }
     } catch (e) {
       _error = 'Failed to load configurations: $e';
     } finally {
@@ -116,6 +141,7 @@ class ConfigProvider extends ChangeNotifier {
       _configs.removeWhere((c) => c.id == id);
       if (_selectedConfig?.id == id) {
         _selectedConfig = null;
+        await StorageService.setSetting<String?>(_selectedConfigKey, null);
       }
       notifyListeners();
     } catch (e) {
@@ -130,6 +156,7 @@ class ConfigProvider extends ChangeNotifier {
       await StorageService.deleteAllConfigs();
       _configs.clear();
       _selectedConfig = null;
+      await StorageService.setSetting<String?>(_selectedConfigKey, null);
       notifyListeners();
     } catch (e) {
       _error = 'Failed to delete all configurations: $e';
@@ -140,88 +167,111 @@ class ConfigProvider extends ChangeNotifier {
   /// Select a config
   void selectConfig(VpnConfig config) {
     _selectedConfig = config;
+    unawaited(StorageService.setSetting<String>(_selectedConfigKey, config.id));
     notifyListeners();
   }
 
   /// Clear selection
   void clearSelection() {
     _selectedConfig = null;
+    unawaited(StorageService.setSetting<String?>(_selectedConfigKey, null));
     notifyListeners();
   }
 
   /// Test ping for a single config
   Future<int?> testPing(String id) async {
+    final index = _configs.indexWhere((c) => c.id == id);
+    if (index == -1) return null;
+    final config = _configs[index];
+
+    _testingIds.add(id);
     _testingConfigId = id;
     _isTestingPing = true;
     notifyListeners();
 
     try {
-      final config = _configs.firstWhere((c) => c.id == id);
-      final ping = await PingService.testPing(config);
+      final ping = await PingService.testPing(config, useCache: false);
       await ConnectionHealthService().recordProbe(config.id, ping);
-
-      // Update the config with new ping
-      final index = _configs.indexWhere((c) => c.id == id);
-      if (index != -1) {
-        final updated = config.copyWith(
-          ping: ping,
-          lastTestedAt: DateTime.now(),
-        );
-        _configs[index] = updated;
-        await StorageService.updateConfig(updated);
-      }
-
+      _applyLatency(config.id, ping);
+      await _persistConfig(config.id);
       return ping;
     } catch (e) {
       _error = 'Failed to test ping: $e';
       return null;
     } finally {
-      _isTestingPing = false;
-      _testingConfigId = null;
+      _testingIds.remove(id);
+      _isTestingPing = _testingIds.isNotEmpty;
+      _testingConfigId = _testingIds.isEmpty ? null : _testingIds.first;
       notifyListeners();
     }
   }
 
-  /// Test ping for all configs - OPTIMIZED with concurrent testing
-  Future<void> testAllPings() async {
+  /// Tests every profile concurrently and shows each result as it arrives.
+  Future<Map<String, int?>> testAllPings() async {
+    if (_configs.isEmpty) return <String, int?>{};
+    final targets = List<VpnConfig>.from(_configs);
     _isTestingPing = true;
+    _testingIds
+      ..clear()
+      ..addAll(targets.map((c) => c.id));
+    _checkCompleted = 0;
+    _checkTotal = targets.length;
     notifyListeners();
 
     try {
-      // Use optimized concurrent ping testing
       final results = await PingService.testMultiplePings(
-        _configs,
-        concurrency: 10, // Test 10 at a time for speed
-        onProgress: (completed, total) {
-          // Update progress - show which config is being tested
-          if (completed < _configs.length) {
-            _testingConfigId = _configs[completed].id;
-            notifyListeners();
-          }
+        targets,
+        concurrency: 12,
+        onResult: (config, ping) {
+          _testingIds.remove(config.id);
+          _checkCompleted++;
+          _applyLatency(config.id, ping);
+          notifyListeners();
         },
       );
 
-      // Update all configs with results
-      for (int i = 0; i < _configs.length; i++) {
-        final ping = results[_configs[i].id];
-        await ConnectionHealthService().recordProbe(_configs[i].id, ping);
-        final updated = _configs[i].copyWith(
-          ping: ping,
-          lastTestedAt: DateTime.now(),
-        );
-        _configs[i] = updated;
-        // Batch save for better performance
-      }
-
-      // Save all updates at once
+      // One write for health history and one for profiles.
+      await ConnectionHealthService().recordProbes(results);
       await StorageService.saveConfigs(_configs);
+      return results;
     } catch (e) {
       _error = 'Failed to test pings: $e';
+      return <String, int?>{};
     } finally {
       _isTestingPing = false;
       _testingConfigId = null;
+      _testingIds.clear();
+      _checkCompleted = 0;
+      _checkTotal = 0;
       notifyListeners();
     }
+  }
+
+  /// Stores latency values measured elsewhere (for example by Smart Connect).
+  Future<void> applyMeasurements(Map<String, int?> latencies) async {
+    if (latencies.isEmpty) return;
+    for (final entry in latencies.entries) {
+      _applyLatency(entry.key, entry.value);
+    }
+    notifyListeners();
+    await StorageService.saveConfigs(_configs);
+  }
+
+  void _applyLatency(String id, int? ping) {
+    final index = _configs.indexWhere((c) => c.id == id);
+    if (index == -1) return;
+    final updated = _configs[index].copyWith(
+      ping: ping,
+      clearPing: ping == null || ping < 0,
+      lastTestedAt: DateTime.now(),
+    );
+    _configs[index] = updated;
+    if (_selectedConfig?.id == id) _selectedConfig = updated;
+  }
+
+  Future<void> _persistConfig(String id) async {
+    final index = _configs.indexWhere((c) => c.id == id);
+    if (index != -1) await StorageService.updateConfig(_configs[index]);
   }
 
   /// Find and select fastest config automatically

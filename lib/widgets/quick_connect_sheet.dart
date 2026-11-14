@@ -13,6 +13,7 @@ class QuickConnectSheet extends StatelessWidget {
   final ValueChanged<VpnConfig> onSelect;
   final ValueChanged<VpnConfig> onConnect;
   final Future<void> Function() onRunChecks;
+  final VoidCallback? onSmartConnect;
 
   const QuickConnectSheet({
     super.key,
@@ -25,6 +26,7 @@ class QuickConnectSheet extends StatelessWidget {
     required this.onSelect,
     required this.onConnect,
     required this.onRunChecks,
+    this.onSmartConnect,
   });
 
   static Future<void> show(
@@ -38,6 +40,7 @@ class QuickConnectSheet extends StatelessWidget {
     required ValueChanged<VpnConfig> onSelect,
     required ValueChanged<VpnConfig> onConnect,
     required Future<void> Function() onRunChecks,
+    VoidCallback? onSmartConnect,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -53,6 +56,7 @@ class QuickConnectSheet extends StatelessWidget {
         onSelect: onSelect,
         onConnect: onConnect,
         onRunChecks: onRunChecks,
+        onSmartConnect: onSmartConnect,
       ),
     );
   }
@@ -141,6 +145,28 @@ class QuickConnectSheet extends StatelessWidget {
                 ],
               ),
             ),
+            if (onSmartConnect != null && configs.length > 1)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: onSmartConnect,
+                    icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                    label: const Text('SMART CONNECT'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accentColor,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      textStyle: const TextStyle(
+                        fontFamily: 'JetBrainsMono',
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             if (candidate != null)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -167,7 +193,7 @@ class QuickConnectSheet extends StatelessWidget {
                   : ListView.separated(
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
                       shrinkWrap: true,
-                      itemCount: configs.length > 8 ? 8 : configs.length,
+                      itemCount: configs.length,
                       separatorBuilder: (_, _) => const SizedBox(height: 8),
                       itemBuilder: (context, index) {
                         final config = configs[index];
