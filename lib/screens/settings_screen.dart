@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/vpn_service.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../utils/theme_manager.dart';
 import '../services/haptic_service.dart';
@@ -768,7 +769,7 @@ class _SettingsScreenState extends State<SettingsScreen>
         _buildSettingCard(
           icon: Icons.memory,
           title: 'Xray Core',
-          subtitle: '25.3.6',
+          subtitle: coreVersionLabel(VpnService().coreVersion),
           theme: theme,
         ),
         _buildSettingCard(

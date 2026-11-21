@@ -20,6 +20,14 @@ The QR Code always points to the APK of the latest Release, so it stays valid fo
 
 > Android may ask you to allow installation from your browser or file manager. If an older build was signed with a different key, uninstall it before installing this test release.
 
+## New in 4.4 — Xray 26 engine
+
+| Capability | What the user gets |
+|---|---|
+| **Current Xray core** | The engine moves from Xray 1.8.17 to 26.7.28, so profiles written for today's panels run as they are. |
+| **XHTTP and Vision** | Profiles using the XHTTP transport or VLESS Vision now connect. |
+| **Plain panel profiles keep working** | The core is pinned to the last Xray release that still accepts VLESS/Trojan without TLS, used by many WebSocket panels. |
+
 ## New in 4.3 — Night Signal
 
 | Capability | What the user gets |

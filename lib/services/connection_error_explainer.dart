@@ -43,14 +43,6 @@ class ConnectionErrorExplainer {
             'app does not support yet. Another route will probably work.',
       );
     }
-    if (text.contains('xhttp') || text.contains('not supported by this')) {
-      return const ConnectionInsight(
-        title: 'This profile needs a newer engine',
-        hint:
-            'It uses a transport this app cannot run yet. Choose another '
-            'route or ask the provider for a WebSocket, gRPC or TCP profile.',
-      );
-    }
     if (text.contains('permission')) {
       return const ConnectionInsight(
         title: 'VPN permission is needed',

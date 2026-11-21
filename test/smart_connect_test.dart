@@ -92,4 +92,16 @@ void main() {
       expect(insight.hint, isNotEmpty);
     });
   });
+
+  group('coreVersionLabel', () {
+    test('shows the Xray version reported by the engine', () {
+      expect(coreVersionLabel('Lib v40, Xray-core v26.7.28'), '26.7.28');
+      expect(coreVersionLabel('Xray-core 1.8.17'), '1.8.17');
+    });
+
+    test('explains when the engine has not reported yet', () {
+      expect(coreVersionLabel(null), 'Available after the engine starts');
+      expect(coreVersionLabel('unexpected'), 'unexpected');
+    });
+  });
 }

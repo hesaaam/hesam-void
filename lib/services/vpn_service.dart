@@ -19,6 +19,20 @@ enum TunnelCheck { idle, checking, verified, failed }
 const String kTunnelNoInternetError =
     'Connected, but no internet passed through the tunnel.';
 
+/// Readable core version from the engine's own report, e.g. "26.7.28".
+///
+/// The engine answers with text such as "Lib v40, Xray-core v26.7.28"; only
+/// the Xray part is shown. Before the engine has started, nothing is known.
+String coreVersionLabel(String? raw) {
+  final text = raw?.trim() ?? '';
+  if (text.isEmpty) return 'Available after the engine starts';
+  final match = RegExp(
+    r'Xray-core\s*v?([0-9]+(?:\.[0-9]+)+)',
+    caseSensitive: false,
+  ).firstMatch(text);
+  return match?.group(1) ?? text;
+}
+
 /// Error text recorded when the engine never reports a started tunnel.
 const String kEngineStartTimeoutError =
     'The VPN engine did not start this profile.';

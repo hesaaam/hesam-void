@@ -2,6 +2,34 @@
 
 All notable changes to Hesam Void are documented in this file.
 
+## [4.4.0] - 2026-11-21 — Xray 26 engine
+
+### Changed
+
+| Area | Change |
+|---|---|
+| VPN engine | Upgraded the bundled Xray core from 1.8.17 (2024) to **26.7.28** through `flutter_v2ray` 2.0.0, with its reworked Android VPN service lifecycle. |
+| Engine version pin | The core is pinned to Xray 26.7.28, the newest release that still accepts VLESS and Trojan without TLS to public servers. Xray 26.9.9 and newer refuse them, which would break common plain-WebSocket panel profiles. |
+| Xray JSON | Profiles written for current Xray versions run as they are; the translations needed by the old core are removed. |
+| Settings | Settings › General shows the Xray version reported by the engine itself instead of a fixed text. |
+
+### Added
+
+| Area | Change |
+|---|---|
+| Transports | XHTTP and VLESS Vision profiles now connect, from links, subscriptions and JSON. |
+
+### Fixed
+
+| Area | Fix |
+|---|---|
+| Core version | The Xray Core entry no longer claims 25.3.6 while 1.8.17 was running. |
+
+### Notes
+
+- Links that use `allowInsecure` no longer turn off TLS certificate checks; such servers need a valid certificate.
+- Validated on desktop Xray 26.7.28: VLESS (Reality Vision, WebSocket TLS, gRPC, XHTTP, plain WebSocket), VMess, Trojan, Shadowsocks, SSH and panel JSON profiles start cleanly.
+
 ## [4.3.0] - 2026-11-14 — Night Signal
 
 ### Added
