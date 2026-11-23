@@ -2,6 +2,24 @@
 
 All notable changes to Hesam Void are documented in this file.
 
+## [4.5.1] - 2026-11-23 — Private tunnel address
+
+### Fixed
+
+| Area | Fix |
+|---|---|
+| WebRTC privacy | The VPN interface now uses a private address (`172.19.0.1`) instead of `26.26.26.1`. Browsers showed the old address to web pages through WebRTC as a "public IP", which leak tests flagged as a mismatch and which marked the phone as using a V2Ray-style VPN. Your real IP was not exposed before and is not now. |
+
+### Changed
+
+| Area | Change |
+|---|---|
+| VPN engine | The engine plugin (`flutter_v2ray` 2.0.0) is now bundled in the repository under `packages/flutter_v2ray`, so fixes like this one can be made to its Android VPN service. The Xray core stays at 26.7.28. |
+
+### Notes
+
+- Check with browserleaks.com/webrtc while connected: "Public IP Address" should be empty or the server's address, with no mismatch warning.
+
 ## [4.5.0] - 2026-11-23 — Edit routes
 
 ### Added
