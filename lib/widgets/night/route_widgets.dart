@@ -13,6 +13,7 @@ class RouteActions {
   final VoidCallback onSelect;
   final VoidCallback onTest;
   final VoidCallback onToggleFavorite;
+  final VoidCallback onEdit;
   final VoidCallback onCopy;
   final VoidCallback onShowQr;
   final VoidCallback onDelete;
@@ -21,6 +22,7 @@ class RouteActions {
     required this.onSelect,
     required this.onTest,
     required this.onToggleFavorite,
+    required this.onEdit,
     required this.onCopy,
     required this.onShowQr,
     required this.onDelete,
@@ -120,6 +122,7 @@ class RouteRow extends StatelessWidget {
                   favorite ? 'Remove from favorites' : 'Add to favorites',
                   actions.onToggleFavorite,
                 ),
+                item(Icons.edit_rounded, 'Edit', actions.onEdit),
                 item(Icons.copy_rounded, 'Copy link', actions.onCopy),
                 item(Icons.qr_code_2_rounded, 'Show QR code', actions.onShowQr),
                 item(

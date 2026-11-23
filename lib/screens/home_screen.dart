@@ -27,6 +27,7 @@ import '../widgets/night/route_widgets.dart';
 import '../widgets/night/signal_scene.dart';
 import '../utils/night_signal.dart';
 import '../services/session_history_service.dart';
+import 'config_edit_screen.dart';
 import 'insights_tab.dart';
 import 'smart_connect_radar_screen.dart';
 import '../services/subscription_service.dart';
@@ -971,6 +972,27 @@ class _HomeScreenState extends State<HomeScreen> {
                 : 'Removed from Favorites',
             icon: Icons.star_rounded,
             color: NightSignal.warning,
+            theme: theme,
+          );
+        },
+        onEdit: () async {
+          _hapticService.selection();
+          final updated = await ConfigEditScreen.open(
+            rowContext,
+            config,
+            accent: theme.primaryColor,
+          );
+          if (updated == null || !mounted) return;
+          _hapticService.success();
+          final inUse =
+              _vpnService.currentConfig?.id == updated.id &&
+              (_vpnService.status == VpnStatus.connected ||
+                  _vpnService.status == VpnStatus.connecting);
+          _showSnackBar(
+            inUse
+                ? 'Route updated. Reconnect to use the changes.'
+                : 'Route updated',
+            icon: Icons.check_circle,
             theme: theme,
           );
         },

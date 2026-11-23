@@ -239,8 +239,14 @@ class ConfigParserService {
           normalized += '=';
         }
         decoded = utf8.decode(base64.decode(normalized));
+        if (!decoded.contains(':')) throw const FormatException();
       } catch (e) {
-        decoded = encodedPart;
+        // SIP002 also allows a plain, percent-encoded method:password.
+        try {
+          decoded = Uri.decodeComponent(encodedPart);
+        } catch (_) {
+          decoded = encodedPart;
+        }
       }
 
       final colonIndex = decoded.indexOf(':');
@@ -252,14 +258,27 @@ class ConfigParserService {
         password = decoded;
       }
 
-      // Parse server address and port
-      final serverColonIndex = serverPart.lastIndexOf(':');
-      if (serverColonIndex != -1) {
-        address = serverPart.substring(0, serverColonIndex);
-        port = int.tryParse(serverPart.substring(serverColonIndex + 1)) ?? 443;
+      // Parse server address and port. SIP002 links may carry plugin
+      // options after the port (`host:port/?plugin=…`) and IPv6 addresses
+      // in brackets.
+      var server = serverPart;
+      final optionsIndex = server.indexOf(RegExp(r'[/?]'));
+      if (optionsIndex != -1) server = server.substring(0, optionsIndex);
+      if (server.startsWith('[') && server.contains(']')) {
+        final end = server.indexOf(']');
+        address = server.substring(1, end);
+        port =
+            int.tryParse(server.substring(end + 1).replaceFirst(':', '')) ??
+            443;
       } else {
-        address = serverPart;
-        port = 443;
+        final serverColonIndex = server.lastIndexOf(':');
+        if (serverColonIndex != -1) {
+          address = server.substring(0, serverColonIndex);
+          port = int.tryParse(server.substring(serverColonIndex + 1)) ?? 443;
+        } else {
+          address = server;
+          port = 443;
+        }
       }
     } else {
       // Legacy format: everything is base64 encoded

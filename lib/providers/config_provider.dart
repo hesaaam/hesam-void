@@ -610,6 +610,23 @@ class ConfigProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Replaces a saved route with its edited version (same id).
+  Future<bool> replaceConfig(VpnConfig updated) async {
+    final index = _configs.indexWhere((c) => c.id == updated.id);
+    if (index == -1) return false;
+    try {
+      await StorageService.updateConfig(updated);
+    } catch (e) {
+      _error = 'Failed to save changes: $e';
+      notifyListeners();
+      return false;
+    }
+    _configs[index] = updated;
+    if (_selectedConfig?.id == updated.id) _selectedConfig = updated;
+    notifyListeners();
+    return true;
+  }
+
   /// Update config name
   Future<void> updateConfigName(String id, String name) async {
     final index = _configs.indexWhere((c) => c.id == id);

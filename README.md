@@ -20,6 +20,14 @@ The QR Code always points to the APK of the latest Release, so it stays valid fo
 
 > Android may ask you to allow installation from your browser or file manager. If an older build was signed with a different key, uninstall it before installing this test release.
 
+## New in 4.5 — Edit routes
+
+| Capability | What the user gets |
+|---|---|
+| **Edit any route** | Every route, single or from a subscription, has Edit in its menu. Change the server address in seconds, or any other part of the link. |
+| **Fields or link** | Clear fields grouped by Server, Identity, Transport, Security and Advanced, or edit the whole link as text. |
+| **Check before saving** | Check that the new address answers before you save; nothing you did not touch is lost. |
+
 ## New in 4.4 — Xray 26 engine
 
 | Capability | What the user gets |

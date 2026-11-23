@@ -224,6 +224,21 @@ class XrayJsonConfig {
     return InternetAddress.tryParse(host) != null ? host : null;
   }
 
+  /// The `{address, port, …}` entry of the first server outbound in [json],
+  /// as the live map inside it (changing it changes [json]).
+  static Map<String, dynamic>? serverEndpoint(Map<String, dynamic> json) {
+    final outbounds = json['outbounds'];
+    if (outbounds is! List) return null;
+    for (final outbound in outbounds) {
+      if (outbound is! Map) continue;
+      if (_serverOf(Map<String, dynamic>.from(outbound)) == null) continue;
+      final settings = outbound['settings'] as Map;
+      final entry = (settings['vnext'] ?? settings['servers'] as List).first;
+      return entry is Map<String, dynamic> ? entry : null;
+    }
+    return null;
+  }
+
   static Map<String, dynamic>? _serverOutbound(Map<String, dynamic> json) {
     final outbounds = json['outbounds'];
     if (outbounds is! List) return null;
