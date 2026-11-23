@@ -2,6 +2,35 @@
 
 All notable changes to Hesam Void are documented in this file.
 
+## [4.5.0] - 2026-11-23 — Edit routes
+
+### Added
+
+| Area | Change |
+|---|---|
+| Edit routes | Every route — added by hand or from a subscription — has **Edit** in its menu. Name, server address and port come first; Identity, Transport, Security and Advanced hold every other setting of the link. |
+| All formats | VLESS, VMess, Trojan, Shadowsocks, SSH (`npvt-ssh://`) and Xray JSON profiles can be edited. JSON profiles get the address and port fields plus the full configuration text. |
+| Link mode | A Fields / Link switch edits the whole link as text, or replaces it with a pasted one, while the route keeps its place, favorite and history. |
+| Check server | Checks the edited address and port before saving. |
+| Advanced parameters | Parameters without their own field are listed under Advanced; they can be changed, removed, or new ones added. |
+
+### Changed
+
+| Area | Change |
+|---|---|
+| Latency after edits | A route's measured latency is cleared when a connection setting changes, and kept when only the name changes. |
+
+### Fixed
+
+| Area | Fix |
+|---|---|
+| Shadowsocks links | Links with plugin options (`host:port/?plugin=…`), IPv6 addresses or a plain `method:password` now read the correct address and port. |
+
+### Notes
+
+- Edits to a subscription route stay until that subscription is updated, which may bring back the provider's version.
+- Settings the app does not know are never dropped on save; untouched parameters are written back as they were.
+
 ## [4.4.0] - 2026-11-21 — Xray 26 engine
 
 ### Changed

@@ -100,6 +100,7 @@ void main() {
               onSelect: () => selected++,
               onTest: () {},
               onToggleFavorite: () {},
+              onEdit: () {},
               onCopy: () {},
               onShowQr: () {},
               onDelete: () {},
