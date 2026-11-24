@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_v2ray/flutter_v2ray.dart';
@@ -462,32 +463,8 @@ class VpnService extends ChangeNotifier {
         debugPrint('[VpnService] SSH Config detected: ${config.name}');
       }
 
-      // CRITICAL FIX: Parse SSH config directly from rawUrl for accurate credentials
-      SshConfig? sshConfig;
-
-      if (config.rawUrl.startsWith('npvt-ssh://')) {
-        // Parse directly from NPVT-SSH URL for accurate credentials
-        try {
-          sshConfig = SshConfig.fromNpvtUrl(config.rawUrl, config.id);
-          if (kDebugMode) {
-            debugPrint('[VpnService] Parsed from NPVT URL:');
-            debugPrint(
-              '[VpnService]   Host: ${sshConfig.sshHost}:${sshConfig.sshPort}',
-            );
-            debugPrint('[VpnService]   Username: ${sshConfig.sshUsername}');
-            debugPrint(
-              '[VpnService]   Type: ${sshConfig.configType.displayName}',
-            );
-          }
-        } catch (e) {
-          if (kDebugMode) {
-            debugPrint('[VpnService] Failed to parse NPVT URL: $e');
-          }
-          sshConfig = null;
-        }
-      }
-
-      // Fallback: Create SshConfig from VpnConfig fields if URL parsing failed
+      // The stored link (ssh:// or npvt-ssh://) holds every setting.
+      var sshConfig = SshConfig.tryParse(config.rawUrl, config.id);
       sshConfig ??= SshConfig(
         id: config.id,
         remarks: config.name,
@@ -497,7 +474,6 @@ class VpnService extends ChangeNotifier {
         sshUsername: config.uuid ?? '',
         sshPassword: config.password ?? '',
         sni: config.sni,
-        tlsVersion: config.encryption ?? 'DEFAULT',
       );
 
       // Validate SSH credentials
@@ -519,25 +495,6 @@ class VpnService extends ChangeNotifier {
         debugPrint(
           '[VpnService] Connecting SSH: ${sshConfig.sshUsername}@${sshConfig.sshHost}:${sshConfig.sshPort}',
         );
-      }
-
-      // Step 0: CRITICAL - Resolve SSH server IP BEFORE connecting
-      // This IP must be bypassed from VPN to avoid circular connection
-      String? sshServerIp;
-      try {
-        final addresses = await InternetAddress.lookup(sshConfig.sshHost);
-        if (addresses.isNotEmpty) {
-          sshServerIp = addresses.first.address;
-          if (kDebugMode) {
-            debugPrint('[VpnService] SSH server IP resolved: $sshServerIp');
-          }
-        }
-      } catch (e) {
-        if (kDebugMode) {
-          debugPrint('[VpnService] Failed to resolve SSH server IP: $e');
-        }
-        // If resolution fails, the host might already be an IP
-        sshServerIp = sshConfig.sshHost;
       }
 
       // Step 1: Start SSH tunnel (creates local SOCKS proxy)
@@ -576,30 +533,15 @@ class VpnService extends ChangeNotifier {
       // Step 3: Create V2Ray config that uses SSH SOCKS proxy as outbound
       final v2rayConfig = _buildSshV2RayConfig(sshConfig, _sshProxyPort!);
 
-      // Step 4: Create bypass list that includes SSH server IP
-      // CRITICAL: SSH server must bypass VPN to avoid circular connection!
-      final sshBypassSubnets = List<String>.from(bypassSubnets);
-      if (sshServerIp != null && sshServerIp.isNotEmpty) {
-        // Add SSH server IP as /32 to bypass VPN
-        final sshServerSubnet = '$sshServerIp/32';
-        if (!sshBypassSubnets.contains(sshServerSubnet)) {
-          sshBypassSubnets.add(sshServerSubnet);
-          if (kDebugMode) {
-            debugPrint(
-              '[VpnService] Added SSH server to bypass: $sshServerSubnet',
-            );
-          }
-        }
-      }
-
       // Step 5: Start V2Ray VPN mode with SSH as backend
       final blockedApps = await _resolveBlockedApps();
       await flutterV2ray.startV2Ray(
         remark: sshConfig.remarks.isNotEmpty ? sshConfig.remarks : 'SSH Server',
         config: v2rayConfig,
         blockedApps: blockedApps,
-        bypassSubnets:
-            sshBypassSubnets, // IMPORTANT: Includes SSH server bypass!
+        // The app's own sockets (the SSH connection) are excluded from the
+        // VPN by the engine, so no route exception is needed here.
+        bypassSubnets: bypassSubnets,
         proxyOnly: false, // VPN Mode - routes ALL traffic
         notificationDisconnectButtonName: "Disconnect",
       );
@@ -647,79 +589,58 @@ class VpnService extends ChangeNotifier {
     }
   }
 
-  /// Build V2Ray JSON config that routes traffic through local SSH SOCKS proxy
-  /// CRITICAL FIX: SSH server must be bypassed to avoid circular connection!
-  /// Traffic flow: App → VPN → V2Ray → SOCKS5 (127.0.0.1:localPort) → SSH → Internet
-  /// BUT: SSH connection itself must go DIRECT, not through VPN!
+  /// Engine config that hands all device traffic (TCP and UDP) to the
+  /// local SSH gateway. The DNS servers given to Android are reached
+  /// through the tunnel: the server's UDP gateway answers them, or the
+  /// gateway asks them over TCP inside SSH.
   String _buildSshV2RayConfig(SshConfig sshConfig, int localPort) {
-    // CRITICAL: SSH server address must be bypassed to prevent loop
-    final sshServerHost = sshConfig.sshHost;
-
-    return '''
-{
-  "log": {
-    "loglevel": "warning"
-  },
-  "inbounds": [
-    {
-      "port": 10808,
-      "listen": "127.0.0.1",
-      "protocol": "socks",
-      "settings": {
-        "auth": "noauth",
-        "udp": true
-      },
-      "tag": "socks-in"
-    }
-  ],
-  "outbounds": [
-    {
-      "protocol": "socks",
-      "settings": {
-        "servers": [
+    final custom = InternetAddress.tryParse(sshConfig.dnsServer ?? '');
+    final dnsServers = [
+      if (custom != null) custom.address,
+      '1.1.1.1',
+      '8.8.8.8',
+    ].toSet().toList();
+    return jsonEncode({
+      'log': {'loglevel': 'warning'},
+      'dns': {'servers': dnsServers},
+      'inbounds': [
+        {
+          'port': 10808,
+          'listen': '127.0.0.1',
+          'protocol': 'socks',
+          'settings': {'auth': 'noauth', 'udp': true},
+          'tag': 'socks-in',
+        },
+      ],
+      'outbounds': [
+        {
+          'protocol': 'socks',
+          'settings': {
+            'servers': [
+              {'address': '127.0.0.1', 'port': localPort},
+            ],
+          },
+          'tag': 'proxy',
+        },
+        {'protocol': 'freedom', 'settings': {}, 'tag': 'direct'},
+      ],
+      'routing': {
+        'domainStrategy': 'AsIs',
+        'rules': [
           {
-            "address": "127.0.0.1",
-            "port": $localPort
-          }
-        ]
+            'type': 'field',
+            'ip': [
+              '127.0.0.0/8',
+              '10.0.0.0/8',
+              '172.16.0.0/12',
+              '192.168.0.0/16',
+            ],
+            'outboundTag': 'direct',
+          },
+          {'type': 'field', 'network': 'tcp,udp', 'outboundTag': 'proxy'},
+        ],
       },
-      "tag": "proxy"
-    },
-    {
-      "protocol": "freedom",
-      "settings": {
-        "domainStrategy": "UseIP"
-      },
-      "tag": "direct"
-    },
-    {
-      "protocol": "blackhole",
-      "settings": {},
-      "tag": "block"
-    }
-  ],
-  "routing": {
-    "domainStrategy": "IPIfNonMatch",
-    "rules": [
-      {
-        "type": "field",
-        "domain": ["$sshServerHost"],
-        "outboundTag": "direct"
-      },
-      {
-        "type": "field",
-        "ip": ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"],
-        "outboundTag": "direct"
-      },
-      {
-        "type": "field",
-        "network": "tcp,udp",
-        "outboundTag": "proxy"
-      }
-    ]
-  }
-}
-''';
+    });
   }
 
   /// Parse SSH config type from transport string

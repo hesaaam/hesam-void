@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hesam_void/models/ssh_config.dart';
 import 'package:hesam_void/models/vpn_config.dart';
 import 'package:hesam_void/providers/config_provider.dart';
 import 'package:hesam_void/screens/config_edit_screen.dart';
@@ -159,21 +160,29 @@ void main() {
     expect(updated.rawUrl, contains('plugin=v2ray-plugin%3Bmode%3Dwebsocket'));
   });
 
-  test('SSH profiles keep their settings and types', () {
+  test('SSH profiles keep their settings after an edit', () {
     final link =
         'npvt-ssh://${_b64({'sshConfigType': 'SSH-SSL', 'remarks': 'SSH', 'sshHost': 'old.example.com', 'sshPort': 443, 'sshUsername': 'user', 'sshPassword': 'pw', 'sni': 'sni.example.com', 'udpgwPort': 7300, 'udpgwTransparentDNS': true, 'payload': 'GET / HTTP/1.1[crlf][crlf]'})}';
-    final draft = ConfigDraft.fromConfig(_saved(link))!;
+    final saved = _saved(link);
+    expect(saved.rawUrl, startsWith('ssh://'), reason: 'imported as ssh://');
+    final draft = ConfigDraft.fromConfig(saved)!;
+    expect(draft.field('type').value, 'tls');
     draft.field(ConfigDraft.addressKey).value = 'new.example.com';
-    draft.field('udpgwTransparentDNS').value = 'false';
+    draft.field('udpgw-dns').value = 'false';
     final updated = draft.build();
-    final json = _unb64(updated.rawUrl, 'npvt-ssh://');
-    expect(json['sshHost'], 'new.example.com');
-    expect(json['sshPort'], 443);
-    expect(json['udpgwPort'], 7300);
-    expect(json['udpgwTransparentDNS'], false);
-    expect(json['payload'], 'GET / HTTP/1.1[crlf][crlf]');
+    final ssh = SshConfig.fromSshUrl(updated.rawUrl, 'x');
+    expect(ssh.sshHost, 'new.example.com');
+    expect(ssh.sshPort, 443);
+    expect(ssh.sshUsername, 'user');
+    expect(ssh.sshPassword, 'pw');
+    expect(ssh.sni, 'sni.example.com');
+    expect(ssh.configType, SshConfigType.ssl);
+    expect(ssh.udpgwPort, 7300);
+    expect(ssh.udpgwTransparentDNS, isFalse);
+    expect(ssh.payload, 'GET / HTTP/1.1[crlf][crlf]');
     expect(updated.address, 'new.example.com');
     expect(updated.isSsh, isTrue);
+    expect(updated.id, 'route-1');
   });
 
   group('Xray JSON', () {
