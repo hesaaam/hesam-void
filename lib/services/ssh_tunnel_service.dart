@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/ssh_config.dart';
 import 'ssh/socks_gateway.dart';
+import 'ssh/ssh_keep_alive.dart';
 import 'ssh/ssh_session.dart';
 
 enum SshStatus { disconnected, connecting, connected, disconnecting, error }
@@ -128,6 +129,9 @@ class SshTunnelService extends ChangeNotifier {
       _connectedAt = DateTime.now();
       _startStatsTimer();
       _watch(session, generation);
+      // Android would otherwise freeze this process soon after the app
+      // leaves the screen, stopping the tunnel.
+      unawaited(SshKeepAlive.start(config.remarks));
       notifyListeners();
       return true;
     } catch (error) {
@@ -222,6 +226,7 @@ class SshTunnelService extends ChangeNotifier {
   }
 
   Future<void> _closeResources() async {
+    unawaited(SshKeepAlive.stop());
     _statsTimer?.cancel();
     _statsTimer = null;
     final gateway = _gateway;

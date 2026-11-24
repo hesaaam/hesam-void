@@ -663,16 +663,47 @@ class VpnService extends ChangeNotifier {
   }
 
   /// Monitor SSH tunnel statistics. Only one listener is kept at a time.
+  /// Speeds are derived from the byte totals, about once a second.
   void _monitorSshStats(SshTunnelService sshService) {
     _detachSshMonitor();
+    var lastUp = 0;
+    var lastDown = 0;
+    DateTime? lastAt;
     void listener() {
       if (sshService.isConnected) {
+        final stats = sshService.stats;
+        final now = DateTime.now();
+        var upSpeed = statsListenable.value.uploadSpeed;
+        var downSpeed = statsListenable.value.downloadSpeed;
+        final previous = lastAt;
+        if (previous == null) {
+          lastAt = now;
+          lastUp = stats.uploadBytes;
+          lastDown = stats.downloadBytes;
+        } else {
+          final elapsed = now.difference(previous).inMilliseconds;
+          if (elapsed >= 900) {
+            upSpeed =
+                ((stats.uploadBytes - lastUp).clamp(0, 1 << 40) *
+                        1000 ~/
+                        elapsed)
+                    .toInt();
+            downSpeed =
+                ((stats.downloadBytes - lastDown).clamp(0, 1 << 40) *
+                        1000 ~/
+                        elapsed)
+                    .toInt();
+            lastAt = now;
+            lastUp = stats.uploadBytes;
+            lastDown = stats.downloadBytes;
+          }
+        }
         statsListenable.value = VpnStats(
-          uploadSpeed: 0, // SSH doesn't provide real-time speed
-          downloadSpeed: 0,
-          totalUpload: sshService.stats.uploadBytes,
-          totalDownload: sshService.stats.downloadBytes,
-          duration: sshService.stats.duration,
+          uploadSpeed: upSpeed,
+          downloadSpeed: downSpeed,
+          totalUpload: stats.uploadBytes,
+          totalDownload: stats.downloadBytes,
+          duration: stats.duration,
         );
       } else if (sshService.status == SshStatus.error &&
           _status != VpnStatus.error) {

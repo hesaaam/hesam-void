@@ -2,6 +2,20 @@
 
 All notable changes to Hesam Void are documented in this file.
 
+## [4.6.1] - 2026-11-24 — SSH keeps running in the background
+
+### Fixed
+
+| Area | Fix |
+|---|---|
+| SSH in the background | An SSH tunnel stopped passing traffic a few seconds after leaving the app (for example when opening Telegram) while still showing Connected. The SSH session runs in the app's own process, which Android froze once the app was off screen; a foreground service ("SSH tunnel is running") now keeps it alive for as long as SSH is connected. |
+| SSH speed | Download and upload speeds on the Connect tab now show real values for SSH instead of staying at zero. |
+
+### Notes
+
+- While SSH is connected there is a second, low-priority notification for the SSH tunnel; it disappears on disconnect.
+- Some phones (for example Xiaomi, Huawei, Samsung with strict battery saving) can still stop background apps; allowing Hesam Void to run without battery restrictions avoids that.
+
 ## [4.6.0] - 2026-11-24 — SSH
 
 ### Added

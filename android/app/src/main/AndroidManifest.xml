@@ -53,6 +53,16 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Keeps the app process (which runs SSH tunnels) alive while one is
+             active; the VPN itself runs in the engine's own process. -->
+        <service
+            android:name=".SshKeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Runs the SSH tunnel that carries the VPN's traffic" />
+        </service>
     </application>
     
     <queries>
