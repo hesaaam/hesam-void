@@ -2,6 +2,33 @@
 
 All notable changes to Hesam Void are documented in this file.
 
+## [4.6.0] - 2026-11-24 — SSH
+
+### Added
+
+| Area | Change |
+|---|---|
+| SSH tab | A fifth tab for SSH servers: the server in use with session time, UDP and DNS state and the server's message, every saved SSH server, and one place to add, check and choose them. Connecting stays on the Connect tab. |
+| Add SSH server | A form with the fields SSH accounts come with: host, port, username, password or private key, connection type (Direct, SSL/TLS, WebSocket), SNI, WebSocket path and Host header, UDPGW port, DNS through the UDP gateway, custom DNS, payload and HTTP proxy. Paste a link to fill it. |
+| Check server | Tests each step the connection will use — reaching the server, TLS, payload or WebSocket, sign-in, UDP gateway and DNS — and shows them one by one as they answer, with the server's message. "Save & connect" goes straight to the tunnel. |
+| ssh:// links | The app's own SSH link format. NPV Tunnel `npvt-ssh://` links are still accepted and converted on import. |
+| Calls and games over SSH | UDP now goes through the server's UDP gateway (badvpn-udpgw), so voice and video calls and games work over SSH. |
+
+### Changed
+
+| Area | Change |
+|---|---|
+| SSH engine | Rebuilt: SSL/TLS sends the configured SNI; WebSocket supports path, Host header, TLS and both raw and framed servers; payloads support the usual placeholders and `[split]`; HTTP proxies work; private keys can sign in. |
+| SSH DNS | DNS always goes through the tunnel: answered by the server through the UDP gateway, or over TCP inside SSH when the server has none. |
+| SSH stability | Keep-alive every 15 seconds and automatic reconnection when the session drops; a refused sign-in is reported instead of retried. |
+| Clear SSH errors | Refused sign-ins, an account in use elsewhere, wrong ports and failed TLS or WebSocket steps are explained in plain words. |
+
+### Notes
+
+- Verified against a real OpenSSH server, stunnel, raw and framed WebSocket relays, an HTTP proxy and badvpn-udpgw (`test/ssh_engine_live_test.dart`, `tool/ssh_live/start.sh`).
+- SSH over SlowDNS is still not supported; such links are kept but cannot connect.
+- An HTTP proxy cannot yet be combined with SSL/TLS.
+
 ## [4.5.1] - 2026-11-23 — Private tunnel address
 
 ### Fixed

@@ -12,11 +12,13 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hesam_void/models/ssh_config.dart';
 import 'package:hesam_void/services/ssh/socks_gateway.dart';
 import 'package:hesam_void/services/ssh/ssh_check.dart';
 import 'package:hesam_void/services/ssh/ssh_session.dart';
+import 'package:hesam_void/widgets/ssh_check_sheet.dart';
 
 final _live = Platform.environment['HV_SSH_LIVE'] == '1';
 final _password = Platform.environment['HV_SSH_PASSWORD'] ?? '';
@@ -361,6 +363,37 @@ void main() {
       );
       expect(signIn.outcome, SshCheckOutcome.failed);
       expect(report.canConnect, isFalse);
+    });
+
+    testWidgets('check sheet walks through each step', (tester) async {
+      tester.view.physicalSize = const Size(1080, 2340);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SshCheckSheet(
+              config: _config(udpgw: 0, dns: '127.0.0.2'),
+              accent: Colors.teal,
+            ),
+          ),
+        ),
+      );
+      expect(find.text('Checking server…'), findsOneWidget);
+      // Let real sockets make progress while the widget tree keeps pumping.
+      for (
+        var i = 0;
+        i < 60 && find.text('Ready to connect').evaluate().isEmpty;
+        i++
+      ) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 100)),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.text('Ready to connect'), findsOneWidget);
+      expect(find.text('Signed in'), findsOneWidget);
+      expect(find.text('Account expires: 2026-12-31'), findsOneWidget);
     });
   });
 }
