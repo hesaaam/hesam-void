@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../models/ssh_config.dart';
 import '../models/vpn_config.dart';
 import 'config_parser_service.dart';
 import 'xray_json_config.dart';
@@ -60,7 +61,7 @@ class EditField {
 }
 
 /// Where a profile stores its settings.
-enum DraftFormat { uri, vmess, ssh, shadowsocks, xrayJson }
+enum DraftFormat { uri, vmess, ssh, sshLink, shadowsocks, xrayJson }
 
 class _Spec {
   final String key;
@@ -152,6 +153,7 @@ class ConfigDraft {
       if (lower.startsWith('npvt-ssh://')) {
         return _fromObjectLink(raw, original, DraftFormat.ssh);
       }
+      if (lower.startsWith('ssh://')) return _fromSshLink(raw, original);
       if (lower.startsWith('ss://')) return _fromShadowsocks(raw, original);
     } catch (_) {
       return null;
@@ -684,6 +686,169 @@ class ConfigDraft {
     );
   }
 
+  static ConfigDraft? _fromSshLink(String raw, VpnConfig original) {
+    final ssh = SshConfig.fromSshUrl(raw, original.id);
+    EditField text(
+      String key,
+      String label,
+      EditSection section,
+      String? value, {
+      EditKind kind = EditKind.text,
+      List<String> options = const [],
+      bool secret = false,
+      String? hint,
+    }) => EditField(
+      key: key,
+      label: label,
+      section: section,
+      kind: kind,
+      options: options,
+      secret: secret,
+      hint: hint,
+      wasPresent: true,
+      initial: value ?? '',
+    );
+    final type = switch (ssh.configType) {
+      SshConfigType.ssl => 'tls',
+      SshConfigType.websocket => 'ws',
+      SshConfigType.slowDns => 'slowdns',
+      SshConfigType.direct => 'direct',
+    };
+    return ConfigDraft._(
+      original: original,
+      format: DraftFormat.sshLink,
+      source: raw,
+      fields: [
+        ..._serverFields(ssh.remarks, ssh.sshHost, '${ssh.sshPort}'),
+        text(_userKey, 'Username', EditSection.identity, ssh.sshUsername),
+        text(
+          secretKey,
+          'Password',
+          EditSection.identity,
+          ssh.sshPassword,
+          secret: true,
+        ),
+        text(
+          'key',
+          'Private key',
+          EditSection.identity,
+          ssh.privateKey,
+          kind: EditKind.multiline,
+          hint: '-----BEGIN OPENSSH PRIVATE KEY-----',
+        ),
+        text(
+          'keypass',
+          'Key passphrase',
+          EditSection.identity,
+          ssh.keyPassphrase,
+          secret: true,
+        ),
+        text(
+          'type',
+          'Connection type',
+          EditSection.transport,
+          type,
+          kind: EditKind.choice,
+          options: const ['direct', 'tls', 'ws'],
+        ),
+        text('path', 'WebSocket path', EditSection.transport, ssh.wsPath),
+        text(
+          'host',
+          'WebSocket Host header',
+          EditSection.transport,
+          ssh.wsHost,
+        ),
+        text(
+          'tls',
+          'WebSocket over TLS',
+          EditSection.transport,
+          '${ssh.wsTls}',
+          kind: EditKind.toggle,
+        ),
+        text(
+          'framing',
+          'WebSocket frames',
+          EditSection.transport,
+          '${ssh.wsFraming}',
+          kind: EditKind.toggle,
+        ),
+        text(
+          'proxy',
+          'HTTP proxy',
+          EditSection.transport,
+          ssh.httpProxy,
+          hint: 'host:port',
+        ),
+        text(
+          'payload',
+          'Payload',
+          EditSection.transport,
+          ssh.payload,
+          kind: EditKind.multiline,
+        ),
+        text('sni', 'SNI (server name)', EditSection.security, ssh.sni),
+        text(
+          'udpgw',
+          'UDPGW port',
+          EditSection.advanced,
+          ssh.udpEnabled ? '${ssh.udpgwPort}' : '',
+          kind: EditKind.number,
+          hint: '7300',
+        ),
+        text(
+          'udpgw-dns',
+          'DNS through the UDP gateway',
+          EditSection.advanced,
+          '${ssh.udpgwTransparentDNS}',
+          kind: EditKind.toggle,
+        ),
+        text('dns', 'DNS server', EditSection.advanced, ssh.dnsServer),
+      ],
+    );
+  }
+
+  static const _userKey = '@user';
+
+  String _buildSshLink() {
+    String? value(String key) {
+      final text = fieldOrNull(key)?.cleaned;
+      return (text == null || text.isEmpty) ? null : text;
+    }
+
+    final user = value(_userKey);
+    if (user == null) {
+      throw const ConfigEditException('Username cannot be empty.');
+    }
+    return SshConfig(
+      id: original.id,
+      remarks: _name,
+      configType: switch (value('type')) {
+        'tls' => SshConfigType.ssl,
+        'ws' => SshConfigType.websocket,
+        'slowdns' => SshConfigType.slowDns,
+        _ => SshConfigType.direct,
+      },
+      sshHost: _address,
+      sshPort: int.parse(_port),
+      sshUsername: user,
+      sshPassword: field(secretKey).value,
+      privateKey: value('key'),
+      keyPassphrase: value('keypass'),
+      sni: value('sni'),
+      wsPath: value('path'),
+      wsHost: value('host'),
+      wsTls: value('tls') == 'true',
+      wsFraming: value('framing') == 'true',
+      httpProxy: value('proxy'),
+      payload: fieldOrNull('payload')?.value.trim().isEmpty ?? true
+          ? null
+          : field('payload').value,
+      udpgwPort: int.tryParse(value('udpgw') ?? '') ?? 0,
+      udpgwTransparentDNS: value('udpgw-dns') != 'false',
+      dnsServer: value('dns'),
+    ).toSshUrl();
+  }
+
   // ---------------------------------------------------------------------
   // Editing helpers
   // ---------------------------------------------------------------------
@@ -691,7 +856,7 @@ class ConfigDraft {
   bool get isJson => format == DraftFormat.xrayJson;
 
   /// Whether parameters can be added under Advanced.
-  bool get supportsCustomParameters => !isJson;
+  bool get supportsCustomParameters => !isJson && format != DraftFormat.sshLink;
 
   EditField field(String key) => fields.firstWhere((f) => f.key == key);
 
@@ -757,7 +922,10 @@ class ConfigDraft {
       throw const ConfigEditException('Port must be a number from 1 to 65535.');
     }
     final secret = fieldOrNull(secretKey);
-    if (secret != null && secret.value.isEmpty) {
+    final usesKey =
+        format == DraftFormat.sshLink &&
+        (fieldOrNull('key')?.cleaned.isNotEmpty ?? false);
+    if (secret != null && secret.value.isEmpty && !usesKey) {
       throw ConfigEditException('${secret.label} cannot be empty.');
     }
     final method = fieldOrNull(methodKey);
@@ -792,6 +960,8 @@ class ConfigDraft {
         return 'vmess://${_encodeObject()}';
       case DraftFormat.ssh:
         return 'npvt-ssh://${_encodeObject()}';
+      case DraftFormat.sshLink:
+        return _buildSshLink();
       case DraftFormat.shadowsocks:
         return _buildShadowsocks();
       case DraftFormat.xrayJson:

@@ -20,6 +20,15 @@ The QR Code always points to the APK of the latest Release, so it stays valid fo
 
 > Android may ask you to allow installation from your browser or file manager. If an older build was signed with a different key, uninstall it before installing this test release.
 
+## New in 4.6 — SSH
+
+| Capability | What the user gets |
+|---|---|
+| **SSH tab** | Add, check and choose SSH servers in their own tab; the one in use shows its session, UDP and DNS state. |
+| **Every common SSH type** | Direct, SSL/TLS with your own SNI, WebSocket (CDN friendly), payloads, HTTP proxy, password or private key. |
+| **Calls and games** | UDP through the server's UDP gateway, with DNS answered inside the tunnel. |
+| **Check before you connect** | Each step is tested and shown live, so you know exactly what works. |
+
 ## New in 4.5 — Edit routes
 
 | Capability | What the user gets |

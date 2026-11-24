@@ -23,7 +23,7 @@ class ConfigParserService {
         return _parseTrojan(url);
       } else if (url.startsWith('ss://')) {
         return _parseShadowsocks(url);
-      } else if (url.startsWith('npvt-ssh://') || url.startsWith('ssh://')) {
+      } else if (SshConfig.isSshLink(url)) {
         // Convert SSH to VpnConfig for unified handling
         return _parseSshToVpnConfig(url);
       }
@@ -34,53 +34,47 @@ class ConfigParserService {
     return null;
   }
 
-  /// Parse SSH config from npvt-ssh:// URL
-  static SshConfig? parseSshConfig(String url) {
-    url = url.trim();
-    if (url.isEmpty) return null;
+  /// Parse an SSH profile from an `ssh://` or `npvt-ssh://` link.
+  static SshConfig? parseSshConfig(String url) =>
+      SshConfig.tryParse(url, _uuid.v4());
 
-    try {
-      if (url.startsWith('npvt-ssh://')) {
-        return SshConfig.fromNpvtUrl(url, _uuid.v4());
-      }
-    } catch (e) {
-      return null;
-    }
-    return null;
+  /// Stores an SSH link as a route. NPV Tunnel links are converted to the
+  /// app's own `ssh://` format (SlowDNS ones are kept as they are, since
+  /// their DNS settings have no `ssh://` equivalent yet).
+  static VpnConfig? _parseSshToVpnConfig(String url) {
+    final sshConfig = SshConfig.tryParse(url, _uuid.v4());
+    if (sshConfig == null || sshConfig.sshHost.isEmpty) return null;
+    final rawUrl = sshConfig.configType == SshConfigType.slowDns
+        ? url.trim()
+        : sshConfig.toSshUrl();
+    return sshVpnConfig(sshConfig, rawUrl: rawUrl);
   }
 
-  /// Convert SSH URL to VpnConfig for unified storage
-  static VpnConfig? _parseSshToVpnConfig(String url) {
-    try {
-      SshConfig? sshConfig;
-
-      if (url.startsWith('npvt-ssh://')) {
-        sshConfig = SshConfig.fromNpvtUrl(url, _uuid.v4());
-      }
-
-      if (sshConfig == null) return null;
-
-      // Convert SSH config to VpnConfig format
-      return VpnConfig(
-        id: sshConfig.id,
-        name: sshConfig.remarks.isNotEmpty ? sshConfig.remarks : 'SSH Server',
-        rawUrl: url,
-        protocolString: 'ssh',
-        address: sshConfig.sshHost,
-        port: sshConfig.sshPort,
-        uuid: sshConfig.sshUsername, // Store username in uuid field
-        password: sshConfig.sshPassword,
-        transportString: sshConfig.configType.shortName.toLowerCase(),
-        securityString: sshConfig.sni != null && sshConfig.sni!.isNotEmpty
-            ? 'tls'
-            : 'none',
-        sni: sshConfig.sni,
-        host: sshConfig.httpProxy,
-        encryption: sshConfig.tlsVersion,
-      );
-    } catch (e) {
-      return null;
-    }
+  /// The stored route for [ssh], whose link is [rawUrl].
+  static VpnConfig sshVpnConfig(SshConfig ssh, {required String rawUrl}) {
+    return VpnConfig(
+      id: ssh.id,
+      name: ssh.remarks.isNotEmpty ? ssh.remarks : 'SSH Server',
+      rawUrl: rawUrl,
+      protocolString: 'ssh',
+      address: ssh.sshHost,
+      port: ssh.sshPort,
+      uuid: ssh.sshUsername, // Store username in uuid field
+      password: ssh.sshPassword,
+      transportString: switch (ssh.configType) {
+        SshConfigType.direct => 'ssh-direct',
+        SshConfigType.websocket => 'ssh-ws',
+        SshConfigType.ssl => 'ssh-tls',
+        SshConfigType.slowDns => 'ssh-dns',
+      },
+      securityString: ssh.usesTls ? 'tls' : 'none',
+      sni: ssh.sni,
+      host: ssh.configType == SshConfigType.websocket
+          ? ssh.wsHost
+          : ssh.httpProxy,
+      path: ssh.wsPath,
+      flow: ssh.udpEnabled ? 'udpgw:${ssh.udpgwPort}' : null,
+    );
   }
 
   /// Parse multiple configs from text (one per line or separated)

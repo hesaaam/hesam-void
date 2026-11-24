@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../models/ssh_config.dart';
 import '../models/vpn_config.dart';
 import '../providers/config_provider.dart';
 import '../services/vpn_service.dart';
@@ -28,6 +29,8 @@ import '../widgets/night/signal_scene.dart';
 import '../utils/night_signal.dart';
 import '../services/session_history_service.dart';
 import 'config_edit_screen.dart';
+import 'ssh_form_screen.dart';
+import 'ssh_tab.dart';
 import 'insights_tab.dart';
 import 'smart_connect_radar_screen.dart';
 import '../services/subscription_service.dart';
@@ -187,6 +190,18 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 _buildConnectTab(theme),
                 _buildConfigsTab(theme),
+                SshTab(
+                  accent: accent,
+                  rowBuilder: (ctx, provider, config) =>
+                      _routeRow(ctx, provider, config, theme, divider: true),
+                  onAdd: () => _openSshForm(theme),
+                  onPasteLink: () => _pasteSshLink(theme),
+                  onCheckAll: (routes) => _runHealthChecks(
+                    context.read<ConfigProvider>(),
+                    theme,
+                    routes,
+                  ),
+                ),
                 InsightsTab(
                   accent: accent,
                   animate: !_experiencePreferences.reduceMotion,
@@ -204,6 +219,7 @@ class _HomeScreenState extends State<HomeScreen> {
         items: const [
           NightNavItem(Icons.power_settings_new_rounded, 'Connect'),
           NightNavItem(Icons.folder_open_rounded, 'Routes'),
+          NightNavItem(Icons.terminal_rounded, 'SSH'),
           NightNavItem(Icons.bar_chart_rounded, 'Insights'),
           NightNavItem(Icons.settings_rounded, 'Settings'),
         ],
@@ -922,6 +938,78 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// Adds or edits an SSH server; connects when the check asked to.
+  Future<void> _openSshForm(
+    AppThemeData theme, {
+    VpnConfig? existing,
+    BuildContext? from,
+  }) async {
+    _hapticService.selection();
+    final result = await SshFormScreen.open(
+      from ?? context,
+      existing: existing,
+      accent: theme.primaryColor,
+    );
+    if (result == null || !mounted) return;
+    _hapticService.success();
+    if (result.connect) {
+      await _connectTo(result.config);
+      return;
+    }
+    final inUse =
+        existing != null &&
+        _vpnService.currentConfig?.id == existing.id &&
+        (_vpnService.status == VpnStatus.connected ||
+            _vpnService.status == VpnStatus.connecting);
+    _showSnackBar(
+      existing == null
+          ? 'SSH server saved'
+          : inUse
+          ? 'SSH server updated. Reconnect to use the changes.'
+          : 'SSH server updated',
+      icon: Icons.check_circle,
+      theme: theme,
+    );
+  }
+
+  /// Selects [config] and connects to it from the Connect tab.
+  Future<void> _connectTo(VpnConfig config) async {
+    final provider = context.read<ConfigProvider>();
+    provider.selectConfig(config);
+    _autoReconnectService.setServerQueue(
+      provider.configs,
+      activeConfigId: config.id,
+    );
+    _selectTab(0);
+    if (_vpnService.isConnected || _vpnService.isConnecting) {
+      _autoReconnectService.notifyUserDisconnecting();
+      await _vpnService.disconnect();
+    }
+    await _vpnService.connect(config);
+  }
+
+  Future<void> _pasteSshLink(AppThemeData theme) async {
+    final provider = context.read<ConfigProvider>();
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text?.trim() ?? '';
+    final links = text
+        .split(RegExp(r'\s+'))
+        .where(SshConfig.isSshLink)
+        .join('\n');
+    if (links.isEmpty) {
+      _showSnackBar(
+        'Copy an ssh:// or npvt-ssh:// link first',
+        icon: Icons.content_paste_off_rounded,
+        color: Colors.orange,
+        theme: theme,
+      );
+      return;
+    }
+    final result = await provider.importFromClipboard(links);
+    if (!mounted) return;
+    _showResult(result.message, result.success, theme);
+  }
+
   void _showResult(String message, bool success, AppThemeData theme) {
     _showSnackBar(
       message,
@@ -977,6 +1065,10 @@ class _HomeScreenState extends State<HomeScreen> {
         },
         onEdit: () async {
           _hapticService.selection();
+          if (config.isSsh) {
+            await _openSshForm(theme, existing: config, from: rowContext);
+            return;
+          }
           final updated = await ConfigEditScreen.open(
             rowContext,
             config,
