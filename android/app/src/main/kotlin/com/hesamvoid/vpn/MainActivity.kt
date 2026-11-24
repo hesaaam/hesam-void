@@ -20,6 +20,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private val installedAppsChannel = "hesam_void/installed_apps"
     private val appUsageChannel = "hesam_void/app_usage"
+    private val sshKeepAliveChannel = "hesam_void/ssh_keepalive"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -28,6 +29,27 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "getLaunchableApps" -> result.success(getLaunchableApps())
                     else -> result.notImplemented()
+                }
+            }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, sshKeepAliveChannel)
+            .setMethodCallHandler { call, result ->
+                try {
+                    when (call.method) {
+                        "start" -> {
+                            SshKeepAliveService.start(
+                                applicationContext,
+                                call.argument<String>("title") ?: "SSH tunnel",
+                            )
+                            result.success(true)
+                        }
+                        "stop" -> {
+                            SshKeepAliveService.stop(applicationContext)
+                            result.success(true)
+                        }
+                        else -> result.notImplemented()
+                    }
+                } catch (error: Exception) {
+                    result.error("ssh_keepalive", error.message, null)
                 }
             }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, appUsageChannel)
